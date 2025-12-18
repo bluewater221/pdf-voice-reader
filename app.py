@@ -173,34 +173,45 @@ def main():
                     col_l, col_d = st.columns(2)
                     
                     if col_l.button("📂 Load", use_container_width=True):
-                        st.write(f"Attempting to download: `{selected_file}`") # DEBUG
+                        st.write(f"Attempting to download: `{selected_file}`")
                         with st.spinner("Downloading..."):
-                            data = cloud_download(selected_file)
-                            if data:
-                                st.info(f"✅ Downloaded {len(data)} bytes") # DEBUG
-                                try:
-                                    st.session_state.pdf = data
-                                    p, t = get_pdf_text(data)
-                                    if p > 0:
-                                        st.session_state.pages = p
-                                        st.session_state.texts = t
-                                        st.session_state.page = 0
-                                        st.session_state.fname = selected_file
-                                        st.success(f"Loaded {p} pages!") # DEBUG
-                                        time.sleep(1) # Let user see success message
-                                        st.rerun()
+                            try:
+                                data = cloud_download(selected_file)
+                                
+                                # Granular Error Handling
+                                if data is None:
+                                    st.error("❌ Download returned `None`. File may not exist or permission denied.")
+                                    # List files to verify
+                                    st.write("Verifying file existence...")
+                                    current_files = [f.get('name') for f in cloud_list()]
+                                    if selected_file in current_files:
+                                        st.warning("File IS in the list but download denied/failed.")
                                     else:
-                                        st.error(f"❌ PDF Parsing Failed. Bytes: {len(data)}")
-                                except Exception as e:
-                                    st.error(f"❌ Processing Error: {e}")
-                            else:
-                                st.error(f"❌ Download returned None for `{selected_file}`")
-                                # Check if file exists in list
-                                all_names = [f.get('name') for f in files]
-                                if selected_file in all_names:
-                                    st.warning("File exists in list but download failed.")
+                                        st.error("File NOT found in current listing.")
+                                        
+                                elif len(data) == 0:
+                                    st.error("❌ Downloaded 0 bytes. File is empty.")
+                                    
                                 else:
-                                    st.warning("File Name mismatch!")
+                                    st.info(f"✅ Success! Received {len(data)} bytes.")
+                                    try:
+                                        st.session_state.pdf = data
+                                        p, t = get_pdf_text(data)
+                                        if p > 0:
+                                            st.session_state.pages = p
+                                            st.session_state.texts = t
+                                            st.session_state.page = 0
+                                            st.session_state.fname = selected_file
+                                            st.success(f"Parsed {p} pages!")
+                                            time.sleep(1)
+                                            st.rerun()
+                                        else:
+                                            st.error("❌ Valid PDF but 0 pages extracted.")
+                                    except Exception as ex:
+                                        st.error(f"❌ PDF Parsing Error: {ex}")
+                                        
+                            except Exception as e:
+                                st.error(f"❌ Critical Download Exception: {e}")
                     
                     if col_d.button("🗑️ Delete", use_container_width=True):
                         if cloud_delete(selected_file):
