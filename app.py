@@ -21,7 +21,7 @@ st.set_page_config(
 
 # --- Supabase ---
 SUPABASE_URL = "https://gkqjhfatsjormqthshri.supabase.co"
-SUPABASE_KEY = "sb_publishable_KFJgk80J3P9If8PUo3UcSA_fDDQhW_4"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrcWpoZmF0c2pvcm1xdGhzaHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYwNDk4MDYsImV4cCI6MjA4MTYyNTgwNn0.z6Rn29XIRTicPxL99hc0i9TB2ur7Ek7EgNTyxQXH5xs"
 
 @st.cache_resource
 def get_supabase():
