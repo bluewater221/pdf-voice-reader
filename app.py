@@ -49,6 +49,7 @@ VOICES = {
     "👩 Grace (British)": {"tld": "co.uk", "lang": "en"},
     "👩 Maya (Indian)": {"tld": "co.in", "lang": "en"},
     "👩 Lisa (Australian)": {"tld": "com.au", "lang": "en"},
+    "👩 Mei (Chinese)": {"tld": "com", "lang": "zh-CN"},
 }
 
 # --- Helper Functions ---
@@ -68,18 +69,37 @@ def get_page_image(file_bytes, page_num):
     except:
         return None
 
+import time
+
+@st.cache_data(show_spinner=False)
 def make_audio(text, lang, tld):
+    """Generate audio with caching and retry."""
     if not text or not text.strip():
         return None
-    try:
-        tts = gTTS(text=text[:5000], lang=lang, tld=tld, slow=False)
-        audio = io.BytesIO()
-        tts.write_to_fp(audio)
-        audio.seek(0)
-        return audio
-    except Exception as e:
-        st.error(f"Audio Error: {e}")
-        return None
+    
+    # Limit text length
+    text = text[:5000]
+    
+    # Retry up to 3 times with delay
+    for attempt in range(3):
+        try:
+            tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
+            audio = io.BytesIO()
+            tts.write_to_fp(audio)
+            audio.seek(0)
+            return audio.getvalue()  # Return bytes for caching
+        except Exception as e:
+            if "429" in str(e):
+                if attempt < 2:
+                    time.sleep(2)  # Wait 2 seconds before retry
+                    continue
+                else:
+                    st.error("⏳ Too many requests. Please wait 30 seconds and try again.")
+                    return None
+            else:
+                st.error(f"Audio Error: {e}")
+                return None
+    return None
 
 # --- Supabase Functions ---
 def cloud_upload(data, name, bucket="pdfs"):
@@ -100,10 +120,14 @@ def cloud_list(bucket="pdfs"):
         return []
 
 def cloud_download(name, bucket="pdfs"):
-    if not supabase: return None
+    if not supabase: 
+        st.error("Supabase not connected")
+        return None
     try:
-        return supabase.storage.from_(bucket).download(name)
-    except:
+        data = supabase.storage.from_(bucket).download(name)
+        return data
+    except Exception as e:
+        st.error(f"Download Error: {e}")
         return None
 
 def cloud_delete(name, bucket="pdfs"):
@@ -240,7 +264,7 @@ def main():
                             audio = make_audio(range_text, voice["lang"], voice["tld"])
                             if audio:
                                 st.audio(audio, format="audio/mp3")
-                                st.download_button("📥 Download", audio.getvalue(), "audio.mp3", "audio/mp3")
+                                st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
             
             st.markdown("---")
             st.subheader("📝 Text")
