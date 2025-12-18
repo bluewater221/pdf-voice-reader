@@ -45,6 +45,28 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- Voice Configuration - WOMEN VOICES ONLY (Using gTTS TLDs) ---
+VOICE_MAP = {
+    "👩 Sarah (American, Neutral)": {"tld": "com", "lang": "en", "sample": "Hello, this is Sarah speaking."},
+    "👩 Grace (British, Professional)": {"tld": "co.uk", "lang": "en", "sample": "Good morning, I am Grace."},
+    "👩 Emma (American, Warm)": {"tld": "com", "lang": "en", "sample": "Hi there, it's Emma here."},
+    "👩 Zara (Neutral, Modern)": {"tld": "com", "lang": "en", "sample": "Welcome, I'm Zara."},
+    "👩 Maya (Indian, Clear)": {"tld": "co.in", "lang": "en", "sample": "Namaste, I'm Maya speaking."},
+    "👩 Lisa (Australian, Friendly)": {"tld": "com.au", "lang": "en", "sample": "G'day, this is Lisa."},
+    "👩 Sophia (American, Calm)": {"tld": "com", "lang": "en", "sample": "Hello, Sophia speaking here."},
+}
+
+def play_voice_sample(text, lang, tld):
+    """Generates and plays a short voice sample."""
+    try:
+        tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        st.audio(fp, format="audio/mp3")
+    except Exception as e:
+        st.error(f"Sample Error: {e}")
+
 def extract_text_from_pdf(file, start_page=1, end_page=None):
     """Extracts text from a PDF file within a specific range."""
     try:
@@ -68,12 +90,11 @@ def extract_text_from_pdf(file, start_page=1, end_page=None):
         st.error(f"Error reading PDF: {e}")
         return [], 0
 
-def text_to_speech(text, lang='en'):
-    """Converts text to speech using gTTS."""
+def text_to_speech(text, lang='en', tld='com'):
+    """Converts text to speech using gTTS with accent support."""
     if not text.strip():
         return None
-    # gTTS defaults to female voice for 'en'
-    tts = gTTS(text=text, lang=lang, slow=False)
+    tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
     fp = io.BytesIO()
     tts.write_to_fp(fp)
     fp.seek(0)
