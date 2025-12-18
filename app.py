@@ -80,21 +80,23 @@ def make_audio(text, lang, tld):
     # Limit text length
     text = text[:5000]
     
-    # Retry up to 3 times with delay
-    for attempt in range(3):
+    # Retry logic with exponential backoff
+    max_retries = 3
+    for attempt in range(max_retries):
         try:
             tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
             audio = io.BytesIO()
             tts.write_to_fp(audio)
             audio.seek(0)
-            return audio.getvalue()  # Return bytes for caching
+            return audio.getvalue()
         except Exception as e:
             if "429" in str(e):
-                if attempt < 2:
-                    time.sleep(2)  # Wait 2 seconds before retry
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s...
+                    time.sleep(wait_time)
                     continue
                 else:
-                    st.error("⏳ Too many requests. Please wait 30 seconds and try again.")
+                    st.error("⚠️ TTS is busy. Please wait 1 minute before trying again.")
                     return None
             else:
                 st.error(f"Audio Error: {e}")
