@@ -164,25 +164,39 @@ def main():
         if supabase:
             files = cloud_list()
             if files:
-                for f in files:
-                    name = f.get('name', '')
-                    with st.expander(f"📄 {name[:20]}"):
-                        if st.button("📂 Load", key=f"l_{name}"):
-                            data = cloud_download(name)
+                # Create a list of filenames
+                file_names = [f.get('name') for f in files if f.get('name')]
+                
+                if file_names:
+                    selected_file = st.selectbox("Select File", file_names)
+                    
+                    col_l, col_d = st.columns(2)
+                    
+                    if col_l.button("📂 Load", use_container_width=True):
+                        with st.spinner("Downloading..."):
+                            data = cloud_download(selected_file)
                             if data:
+                                st.info(f"Downloaded {len(data)} bytes")
                                 st.session_state.pdf = data
                                 p, t = get_pdf_text(data)
-                                st.session_state.pages = p
-                                st.session_state.texts = t
-                                st.session_state.page = 0
-                                st.session_state.fname = name
-                                st.rerun()
-                        if st.button("🗑️ Delete", key=f"d_{name}"):
-                            if cloud_delete(name):
-                                st.success("Deleted!")
-                                st.rerun()
+                                if p > 0:
+                                    st.session_state.pages = p
+                                    st.session_state.texts = t
+                                    st.session_state.page = 0
+                                    st.session_state.fname = selected_file
+                                    st.success("Loaded!")
+                                    st.rerun()
+                                else:
+                                    st.error("Invalid PDF content")
+                    
+                    if col_d.button("🗑️ Delete", use_container_width=True):
+                        if cloud_delete(selected_file):
+                            st.success("Deleted!")
+                            st.rerun()
+                else:
+                    st.caption("No files found")
             else:
-                st.caption("No files saved")
+                st.caption("Library is empty")
         else:
             st.warning("Cloud not connected")
 
