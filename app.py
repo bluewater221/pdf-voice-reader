@@ -229,6 +229,7 @@ def main():
     
     if file:
         data = file.read()
+        # Only update if different file to avoid reset on rerun
         if st.session_state.pdf != data:
             st.session_state.pdf = data
             p, t = get_pdf_text(data)
@@ -236,15 +237,16 @@ def main():
             st.session_state.texts = t
             st.session_state.page = 0
             st.session_state.fname = file.name
-        
+
+    # Viewer (Checks Session State, not just Uploader)
+    if st.session_state.pdf:
         pages = st.session_state.pages
         texts = st.session_state.texts
         page = st.session_state.page
         
         if pages == 0:
-            st.error("Cannot read PDF")
-            return
-        
+            st.error("Cannot read PDF") # Should not happen if loaded correctly
+            
         # Info + Save
         c1, c2 = st.columns([3, 1])
         c1.success(f"📄 {st.session_state.fname} - {pages} pages")
@@ -260,6 +262,8 @@ def main():
             img = get_page_image(st.session_state.pdf, page)
             if img:
                 st.image(img, use_container_width=True)
+            else:
+                st.warning("Cannot render page")
         
         with col2:
             st.subheader("🎧 Controls")
@@ -284,6 +288,7 @@ def main():
                         audio = make_audio(text, voice["lang"], voice["tld"])
                         if audio:
                             st.audio(audio, format="audio/mp3")
+                            st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
                 else:
                     st.warning("No text on this page")
             
@@ -309,7 +314,7 @@ def main():
             st.text_area("", texts[page][:1500] if page < len(texts) else "", height=150, disabled=True)
     
     else:
-        st.info("👆 Upload a PDF to start")
+        st.info("👆 Upload a PDF to start (or load from cloud)")
 
 if __name__ == "__main__":
     main()
