@@ -262,10 +262,10 @@ def main():
             
             # Nav
             c1, c2, c3, c4 = st.columns(4)
-            if c1.button("⏮️"): st.session_state.page = 0; st.session_state.audio_data = None; st.rerun()
-            if c2.button("◀️") and page > 0: st.session_state.page -= 1; st.session_state.audio_data = None; st.rerun()
-            if c3.button("▶️") and page < pages-1: st.session_state.page += 1; st.session_state.audio_data = None; st.rerun()
-            if c4.button("⏭️"): st.session_state.page = pages-1; st.session_state.audio_data = None; st.rerun()
+            if c1.button("⏪ First"): st.session_state.page = 0; st.session_state.audio_data = None; st.rerun()
+            if c2.button("⬅️ Prev") and page > 0: st.session_state.page -= 1; st.session_state.audio_data = None; st.rerun()
+            if c3.button("Next ➡️") and page < pages-1: st.session_state.page += 1; st.session_state.audio_data = None; st.rerun()
+            if c4.button("Last ⏩"): st.session_state.page = pages-1; st.session_state.audio_data = None; st.rerun()
             
             new_pg = st.slider("Page", 1, pages, page + 1) - 1
             if new_pg != page: st.session_state.page = new_pg; st.session_state.audio_data = None; st.rerun()
@@ -279,18 +279,24 @@ def main():
             remaining = int(st.session_state.tts_limit - time.time())
             is_cooldown = remaining > 0
             
-            btn_text = f"⏳ Ready in {remaining}s" if is_cooldown else "🔊 Read This Page"
+            btn_text = f"⚠️ Wait {remaining}s" if is_cooldown else "🔊 Read This Page"
             
             if st.button(btn_text, disabled=is_cooldown, type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
+                
+                if len(text) > 5000:
+                    st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
+                
                 if text.strip():
                     with st.spinner("Generating..."):
+                        # Pass strict=True to check for rate limits
                         audio, status = make_audio(text, voice["lang"], voice["tld"])
                         
                         if audio:
                             st.session_state.audio_data = audio
+                            st.rerun() # Rerun to show player immediately
                         elif status == 429:
-                            st.session_state.tts_limit = time.time() + 20 # Reduced to 20s
+                            st.session_state.tts_limit = time.time() + 20 
                             st.rerun()
                 else:
                     st.warning("No text on this page")
