@@ -166,15 +166,22 @@ def main():
             st.warning("No text could be extracted from this PDF.")
             return
 
-        # --- Split Layout: PDF Viewer | Controls ---
+        # --- Split Layout: Page Text | Controls ---
         col_pdf, col_controls = st.columns([1, 1], gap="large")
 
         with col_pdf:
-            st.markdown("### 📖 PDF Preview")
-            # Embed PDF as base64 iframe
-            b64_pdf = base64.b64encode(st.session_state.pdf_bytes).decode('utf-8')
-            pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" class="pdf-viewer"></iframe>'
-            st.markdown(pdf_display, unsafe_allow_html=True)
+            st.markdown("### 📖 Document Text")
+            st.info(f"📄 **{uploaded_file.name}** • {len(lines)} sentences extracted")
+            
+            # Show current line prominently
+            current_text = lines[current_idx] if current_idx < len(lines) else ""
+            st.markdown(f"""
+                <div style="background-color: #4A90E2; padding: 20px; border-radius: 10px; margin: 10px 0;">
+                    <p style="color: white; font-size: 18px; font-weight: 600; margin: 0;">
+                        📍 Line {current_idx + 1}: {current_text[:200]}{'...' if len(current_text) > 200 else ''}
+                    </p>
+                </div>
+            """, unsafe_allow_html=True)
 
         with col_controls:
             st.markdown("### 🎧 Reading Controls")
@@ -212,13 +219,45 @@ def main():
             st.markdown("---")
 
             # Play Current Line
-            if st.button("🔊 Play Current Line", type="primary", use_container_width=True):
+            if st.button("🔊 Play Current Line", use_container_width=True):
                 current_text = lines[current_idx]
                 audio = generate_audio(current_text, voice_data["lang"], voice_data["tld"])
                 if audio:
                     st.audio(audio, format="audio/mp3")
                 else:
                     st.warning("Could not generate audio for this line.")
+            
+            # Read FULL PDF
+            st.markdown("---")
+            st.markdown("### 📖 Read Full Document")
+            
+            if st.button("🎧 Generate Full Audio (All Pages)", type="primary", use_container_width=True):
+                with st.spinner("⏳ Generating audio for entire PDF... This may take a few minutes for large documents."):
+                    # Combine all lines into full text
+                    full_text = " ".join(lines)
+                    
+                    # Show progress
+                    st.info(f"Processing {len(full_text)} characters (~{len(full_text)//150} seconds of audio)")
+                    
+                    # Generate audio for full text
+                    full_audio = generate_audio(full_text, voice_data["lang"], voice_data["tld"])
+                    
+                    if full_audio:
+                        st.success("✅ Full audio generated successfully!")
+                        st.audio(full_audio, format="audio/mp3")
+                        
+                        # Download button
+                        st.download_button(
+                            "📥 Download Full Audio (MP3)",
+                            full_audio.getvalue(),
+                            file_name="full_pdf_audio.mp3",
+                            mime="audio/mp3",
+                            use_container_width=True
+                        )
+                    else:
+                        st.error("Could not generate audio. The PDF may be too large or contain no readable text.")
+            
+            st.caption("💡 Tip: Full audio generation may take 1-5 minutes for large PDFs.")
             
             st.markdown("---")
             
