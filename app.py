@@ -301,7 +301,9 @@ def main():
             end = r2.number_input("To", 1, pages, pages)
             
             if start <= end:
-                if st.button(f"🎧 Read {start}-{end}", use_container_width=True):
+                range_btn_text = f"⏳ Ready in {remaining}s" if is_cooldown else f"🎧 Read {start}-{end}"
+                
+                if st.button(range_btn_text, disabled=is_cooldown, use_container_width=True, key="range_read"):
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
                         with st.spinner("Generating..."):
