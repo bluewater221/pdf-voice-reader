@@ -75,7 +75,8 @@ def get_pdf_data(file_bytes):
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         pages_text = [page.get_text() for page in doc]
         return len(doc), pages_text
-    except:
+    except Exception as e:
+        st.error(f"PDF Error: {e}")
         return 0, []
 
 def render_page_as_image(file_bytes, page_num):
@@ -84,19 +85,24 @@ def render_page_as_image(file_bytes, page_num):
         page = doc.load_page(page_num)
         pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
         return pix.tobytes("png")
-    except:
+    except Exception as e:
+        st.error(f"Render Error: {e}")
         return None
 
 def generate_audio(text, lang='en', tld='com'):
-    if not text.strip():
+    if not text or not text.strip():
+        st.warning("No text to read on this page.")
         return None
     try:
-        tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
+        # Limit text to avoid gTTS timeout (max ~5000 chars at a time)
+        text_to_read = text[:5000] if len(text) > 5000 else text
+        tts = gTTS(text=text_to_read, lang=lang, tld=tld, slow=False)
         fp = io.BytesIO()
         tts.write_to_fp(fp)
         fp.seek(0)
         return fp
-    except:
+    except Exception as e:
+        st.error(f"Audio Error: {e}")
         return None
 
 # --- Supabase Storage Functions ---
