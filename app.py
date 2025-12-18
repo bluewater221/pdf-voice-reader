@@ -73,9 +73,9 @@ import time
 
 @st.cache_data(show_spinner=False)
 def make_audio(text, lang, tld):
-    """Generate audio with caching and retry."""
+    """Generate audio. Returns (audio_bytes, status_code)."""
     if not text or not text.strip():
-        return None
+        return None, 400
     
     # Limit text length
     text = text[:5000]
@@ -88,20 +88,20 @@ def make_audio(text, lang, tld):
             audio = io.BytesIO()
             tts.write_to_fp(audio)
             audio.seek(0)
-            return audio.getvalue()
+            return audio.getvalue(), 200
         except Exception as e:
             if "429" in str(e):
                 if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2  # 2s, 4s, 6s...
+                    wait_time = (attempt + 1) * 2
                     time.sleep(wait_time)
                     continue
                 else:
-                    st.error("⚠️ TTS is busy. Please wait 1 minute before trying again.")
-                    return None
+                    # Return 429 status so UI can handle cooldown
+                    return None, 429
             else:
                 st.error(f"Audio Error: {e}")
-                return None
-    return None
+                return None, 500
+    return None, 500
 
 # --- Supabase Functions ---
 def cloud_upload(data, name, bucket="pdfs"):
@@ -268,17 +268,31 @@ def main():
             
             st.markdown("---")
             
-            # Read
-            if st.button("🔊 Read This Page", type="primary", use_container_width=True):
-                text = texts[page] if page < len(texts) else ""
-                if text.strip():
-                    with st.spinner("Generating..."):
-                        audio = make_audio(text, voice["lang"], voice["tld"])
-                        if audio:
-                            st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
-                else:
-                    st.warning("No text on this page")
+            # TTS Cooldown Logic
+            if 'tts_limit' not in st.session_state:
+                st.session_state.tts_limit = 0
+            
+            remaining = int(st.session_state.tts_limit - time.time())
+            
+            if remaining > 0:
+                st.warning(f"⚠️ TTS Cooldown: Wait {remaining}s")
+                st.button("🔊 Read This Page", disabled=True, key="read_disabled")
+            else:
+                if st.button("🔊 Read This Page", type="primary", use_container_width=True):
+                    text = texts[page] if page < len(texts) else ""
+                    if text.strip():
+                        with st.spinner("Generating..."):
+                            # Pass strict=True to check for rate limits
+                            audio, status = make_audio(text, voice["lang"], voice["tld"])
+                            
+                            if audio:
+                                st.audio(audio, format="audio/mp3")
+                                st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
+                            elif status == 429:
+                                st.session_state.tts_limit = time.time() + 60
+                                st.rerun()
+                    else:
+                        st.warning("No text on this page")
             
             st.markdown("---")
             
@@ -292,10 +306,13 @@ def main():
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
                         with st.spinner("Generating..."):
-                            audio = make_audio(range_text, voice["lang"], voice["tld"])
+                            audio, status = make_audio(range_text, voice["lang"], voice["tld"])
                             if audio:
                                 st.audio(audio, format="audio/mp3")
                                 st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
+                            elif status == 429:
+                                st.session_state.tts_limit = time.time() + 60
+                                st.rerun()
             
             st.markdown("---")
             st.subheader("📝 Text")
