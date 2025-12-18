@@ -2,6 +2,14 @@ import streamlit as st
 import fitz  # PyMuPDF
 from gtts import gTTS
 import io
+import uuid
+
+# Supabase import
+try:
+    from supabase import create_client
+    SUPABASE_OK = True
+except:
+    SUPABASE_OK = False
 
 # --- Page Config ---
 st.set_page_config(
@@ -10,6 +18,21 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# --- Supabase ---
+SUPABASE_URL = "https://gkqjhfatsjormqthshri.supabase.co"
+SUPABASE_KEY = "sb_publishable_KFJgk80J3P9If8PUo3UcSA_fDDQhW_4"
+
+@st.cache_resource
+def get_supabase():
+    if SUPABASE_OK:
+        try:
+            return create_client(SUPABASE_URL, SUPABASE_KEY)
+        except:
+            return None
+    return None
+
+supabase = get_supabase()
 
 # --- CSS ---
 st.markdown("""
@@ -28,34 +51,28 @@ VOICES = {
     "👩 Lisa (Australian)": {"tld": "com.au", "lang": "en"},
 }
 
-# --- Functions ---
+# --- Helper Functions ---
 def get_pdf_text(file_bytes):
-    """Extract text from all pages."""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        texts = [page.get_text() for page in doc]
-        return len(doc), texts
+        return len(doc), [page.get_text() for page in doc]
     except Exception as e:
         st.error(f"PDF Error: {e}")
         return 0, []
 
 def get_page_image(file_bytes, page_num):
-    """Render page as image."""
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
-        page = doc.load_page(page_num)
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+        pix = doc.load_page(page_num).get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
         return pix.tobytes("png")
     except:
         return None
 
 def make_audio(text, lang, tld):
-    """Generate audio from text."""
     if not text or not text.strip():
         return None
     try:
-        text = text[:5000]  # Limit length
-        tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
+        tts = gTTS(text=text[:5000], lang=lang, tld=tld, slow=False)
         audio = io.BytesIO()
         tts.write_to_fp(audio)
         audio.seek(0)
@@ -64,93 +81,144 @@ def make_audio(text, lang, tld):
         st.error(f"Audio Error: {e}")
         return None
 
-# --- Main App ---
+# --- Supabase Functions ---
+def cloud_upload(data, name, bucket="pdfs"):
+    if not supabase: return None
+    try:
+        fname = f"{uuid.uuid4().hex}_{name}"
+        supabase.storage.from_(bucket).upload(fname, data)
+        return fname
+    except Exception as e:
+        st.error(f"Upload Error: {e}")
+        return None
+
+def cloud_list(bucket="pdfs"):
+    if not supabase: return []
+    try:
+        return supabase.storage.from_(bucket).list() or []
+    except:
+        return []
+
+def cloud_download(name, bucket="pdfs"):
+    if not supabase: return None
+    try:
+        return supabase.storage.from_(bucket).download(name)
+    except:
+        return None
+
+def cloud_delete(name, bucket="pdfs"):
+    if not supabase: return False
+    try:
+        supabase.storage.from_(bucket).remove([name])
+        return True
+    except:
+        return False
+
+# --- Main ---
 def main():
     st.title("🎧 PDF Voice Reader")
     
+    if supabase:
+        st.caption("☁️ Cloud storage connected")
+    
     # Session state
-    if 'pdf_bytes' not in st.session_state:
-        st.session_state.pdf_bytes = None
-    if 'page' not in st.session_state:
-        st.session_state.page = 0
-    if 'pages' not in st.session_state:
-        st.session_state.pages = 0
-    if 'texts' not in st.session_state:
-        st.session_state.texts = []
+    if 'pdf' not in st.session_state: st.session_state.pdf = None
+    if 'page' not in st.session_state: st.session_state.page = 0
+    if 'pages' not in st.session_state: st.session_state.pages = 0
+    if 'texts' not in st.session_state: st.session_state.texts = []
+    if 'fname' not in st.session_state: st.session_state.fname = ""
 
-    # Sidebar - Voice
+    # Sidebar
     with st.sidebar:
         st.header("🎤 Voice")
         voice_name = st.selectbox("Select", list(VOICES.keys()))
         voice = VOICES[voice_name]
+        
+        st.markdown("---")
+        st.header("☁️ Cloud Library")
+        
+        if supabase:
+            files = cloud_list()
+            if files:
+                for f in files:
+                    name = f.get('name', '')
+                    with st.expander(f"📄 {name[:20]}"):
+                        if st.button("📂 Load", key=f"l_{name}"):
+                            data = cloud_download(name)
+                            if data:
+                                st.session_state.pdf = data
+                                p, t = get_pdf_text(data)
+                                st.session_state.pages = p
+                                st.session_state.texts = t
+                                st.session_state.page = 0
+                                st.session_state.fname = name
+                                st.rerun()
+                        if st.button("🗑️ Delete", key=f"d_{name}"):
+                            if cloud_delete(name):
+                                st.success("Deleted!")
+                                st.rerun()
+            else:
+                st.caption("No files saved")
+        else:
+            st.warning("Cloud not connected")
 
     # Upload
     file = st.file_uploader("📄 Upload PDF", type=["pdf"])
     
     if file:
-        # Read file
-        file_bytes = file.read()
-        
-        # Process if new file
-        if st.session_state.pdf_bytes != file_bytes:
-            st.session_state.pdf_bytes = file_bytes
-            pages, texts = get_pdf_text(file_bytes)
-            st.session_state.pages = pages
-            st.session_state.texts = texts
+        data = file.read()
+        if st.session_state.pdf != data:
+            st.session_state.pdf = data
+            p, t = get_pdf_text(data)
+            st.session_state.pages = p
+            st.session_state.texts = t
             st.session_state.page = 0
+            st.session_state.fname = file.name
         
         pages = st.session_state.pages
         texts = st.session_state.texts
         page = st.session_state.page
         
         if pages == 0:
-            st.error("Could not read PDF")
+            st.error("Cannot read PDF")
             return
         
-        st.success(f"📄 {file.name} - {pages} pages")
+        # Info + Save
+        c1, c2 = st.columns([3, 1])
+        c1.success(f"📄 {st.session_state.fname} - {pages} pages")
+        if supabase and c2.button("☁️ Save"):
+            if cloud_upload(st.session_state.pdf, st.session_state.fname):
+                st.success("Saved!")
         
         # Layout
         col1, col2 = st.columns([1, 1])
         
         with col1:
             st.subheader(f"📖 Page {page + 1}/{pages}")
-            img = get_page_image(st.session_state.pdf_bytes, page)
+            img = get_page_image(st.session_state.pdf, page)
             if img:
                 st.image(img, use_container_width=True)
-            else:
-                st.warning("Cannot render page")
         
         with col2:
             st.subheader("🎧 Controls")
             
-            # Navigation
+            # Nav
             c1, c2, c3, c4 = st.columns(4)
-            if c1.button("⏮️"):
-                st.session_state.page = 0
-                st.rerun()
-            if c2.button("◀️") and page > 0:
-                st.session_state.page = page - 1
-                st.rerun()
-            if c3.button("▶️") and page < pages - 1:
-                st.session_state.page = page + 1
-                st.rerun()
-            if c4.button("⏭️"):
-                st.session_state.page = pages - 1
-                st.rerun()
+            if c1.button("⏮️"): st.session_state.page = 0; st.rerun()
+            if c2.button("◀️") and page > 0: st.session_state.page -= 1; st.rerun()
+            if c3.button("▶️") and page < pages-1: st.session_state.page += 1; st.rerun()
+            if c4.button("⏭️"): st.session_state.page = pages-1; st.rerun()
             
-            # Slider
-            new_page = st.slider("Page", 1, pages, page + 1) - 1
-            if new_page != page:
-                st.session_state.page = new_page
-                st.rerun()
+            new_pg = st.slider("Page", 1, pages, page + 1) - 1
+            if new_pg != page: st.session_state.page = new_pg; st.rerun()
             
             st.markdown("---")
             
-            # Read button
+            # Read
             if st.button("🔊 Read This Page", type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
                 if text.strip():
-                    with st.spinner("Generating audio..."):
+                    with st.spinner("Generating..."):
                         audio = make_audio(text, voice["lang"], voice["tld"])
                         if audio:
                             st.audio(audio, format="audio/mp3")
@@ -159,14 +227,13 @@ def main():
             
             st.markdown("---")
             
-            # Custom range
-            st.markdown("**Custom Range:**")
+            # Range
             r1, r2 = st.columns(2)
             start = r1.number_input("From", 1, pages, 1)
             end = r2.number_input("To", 1, pages, pages)
             
             if start <= end:
-                if st.button(f"🎧 Read Pages {start}-{end}", use_container_width=True):
+                if st.button(f"🎧 Read {start}-{end}", use_container_width=True):
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
                         with st.spinner("Generating..."):
@@ -176,14 +243,11 @@ def main():
                                 st.download_button("📥 Download", audio.getvalue(), "audio.mp3", "audio/mp3")
             
             st.markdown("---")
-            
-            # Text preview
             st.subheader("📝 Text")
-            text = texts[page] if page < len(texts) else ""
-            st.text_area("Content", text[:1500], height=150, disabled=True)
+            st.text_area("", texts[page][:1500] if page < len(texts) else "", height=150, disabled=True)
     
     else:
-        st.info("👆 Upload a PDF to get started")
+        st.info("👆 Upload a PDF to start")
 
 if __name__ == "__main__":
     main()
