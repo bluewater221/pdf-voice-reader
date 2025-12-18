@@ -267,8 +267,9 @@ def main():
             if c3.button("Next ➡️") and page < pages-1: st.session_state.page += 1; st.session_state.audio_data = None; st.rerun()
             if c4.button("Last ⏩"): st.session_state.page = pages-1; st.session_state.audio_data = None; st.rerun()
             
-            new_pg = st.slider("Page", 1, pages, page + 1) - 1
-            if new_pg != page: st.session_state.page = new_pg; st.session_state.audio_data = None; st.rerun()
+            if pages > 1:
+                new_pg = st.slider("Page", 1, pages, page + 1) - 1
+                if new_pg != page: st.session_state.page = new_pg; st.session_state.audio_data = None; st.rerun()
             
             st.markdown("---")
             
