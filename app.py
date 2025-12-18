@@ -228,12 +228,16 @@ def main():
 
     # Viewer (Checks Session State, not just Uploader)
     if st.session_state.pdf:
+        # Initialize Audio State
+        if 'audio_data' not in st.session_state:
+            st.session_state.audio_data = None
+            
         pages = st.session_state.pages
         texts = st.session_state.texts
         page = st.session_state.page
         
         if pages == 0:
-            st.error("Cannot read PDF") # Should not happen if loaded correctly
+            st.error("Cannot read PDF") 
             
         # Info + Save
         c1, c2 = st.columns([3, 1])
@@ -258,13 +262,13 @@ def main():
             
             # Nav
             c1, c2, c3, c4 = st.columns(4)
-            if c1.button("⏮️"): st.session_state.page = 0; st.rerun()
-            if c2.button("◀️") and page > 0: st.session_state.page -= 1; st.rerun()
-            if c3.button("▶️") and page < pages-1: st.session_state.page += 1; st.rerun()
-            if c4.button("⏭️"): st.session_state.page = pages-1; st.rerun()
+            if c1.button("⏮️"): st.session_state.page = 0; st.session_state.audio_data = None; st.rerun()
+            if c2.button("◀️") and page > 0: st.session_state.page -= 1; st.session_state.audio_data = None; st.rerun()
+            if c3.button("▶️") and page < pages-1: st.session_state.page += 1; st.session_state.audio_data = None; st.rerun()
+            if c4.button("⏭️"): st.session_state.page = pages-1; st.session_state.audio_data = None; st.rerun()
             
             new_pg = st.slider("Page", 1, pages, page + 1) - 1
-            if new_pg != page: st.session_state.page = new_pg; st.rerun()
+            if new_pg != page: st.session_state.page = new_pg; st.session_state.audio_data = None; st.rerun()
             
             st.markdown("---")
             
@@ -281,14 +285,12 @@ def main():
                 text = texts[page] if page < len(texts) else ""
                 if text.strip():
                     with st.spinner("Generating..."):
-                        # Pass strict=True to check for rate limits
                         audio, status = make_audio(text, voice["lang"], voice["tld"])
                         
                         if audio:
-                            st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
+                            st.session_state.audio_data = audio
                         elif status == 429:
-                            st.session_state.tts_limit = time.time() + 60
+                            st.session_state.tts_limit = time.time() + 20 # Reduced to 20s
                             st.rerun()
                 else:
                     st.warning("No text on this page")
@@ -309,12 +311,17 @@ def main():
                         with st.spinner("Generating..."):
                             audio, status = make_audio(range_text, voice["lang"], voice["tld"])
                             if audio:
-                                st.audio(audio, format="audio/mp3")
-                                st.download_button("📥 Download", audio, "audio.mp3", "audio/mp3")
+                                st.session_state.audio_data = audio
                             elif status == 429:
-                                st.session_state.tts_limit = time.time() + 60
+                                st.session_state.tts_limit = time.time() + 20 # Reduced to 20s
                                 st.rerun()
-            
+
+            # Persistent Audio Player
+            if st.session_state.audio_data:
+                st.success("✅ Ready to play!")
+                st.audio(st.session_state.audio_data, format="audio/mp3")
+                st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3")
+
             st.markdown("---")
             st.subheader("📝 Text")
             st.text_area("", texts[page][:1500] if page < len(texts) else "", height=150, disabled=True)
