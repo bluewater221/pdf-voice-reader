@@ -80,207 +80,105 @@ def text_to_speech(text, lang='en'):
     return fp
 
 def main():
-    st.set_page_config(
-        page_title="PDF Voice Reader",
-        page_icon="🎧",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-
-    # --- Custom CSS for Dark Blue Theme ---
-    st.markdown("""
-        <style>
-        /* Global Font & Colors */
-        .stApp {
-            font-family: 'Inter', sans-serif;
-            background-color: #001a4d;
-            color: white;
-        }
-        
-        /* Headers */
-        h1, h2, h3, p, div, span, label {
-            color: white !important;
-        }
-        
-        /* Buttons */
-        .stButton>button {
-            border-radius: 8px;
-            font-weight: 600;
-            border: none;
-            background-color: #ff4b4b; /* Keep accent color for visibility */
-            color: white;
-            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            transition: all 0.2s;
-        }
-        .stButton>button:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-        
-        /* Custom Cards / Containers */
-        .css-1r6slb0, .stFileUploader { 
-            background-color: #003366; /* Slightly lighter blue for contrast */
-            padding: 1.5rem;
-            border-radius: 12px;
-            border: 1px solid #004080;
-        }
-        
-        /* Inputs */
-        .stTextInput>div>div>input, .stNumberInput>div>div>input {
-            color: white;
-            background-color: #00264d;
-        }
-        
-        /* Expander */
-        .streamlit-expanderHeader {
-            background-color: #003366;
-            color: white;
-        }
-        
-        /* Audio Player Styling */
-        audio {
-            width: 100%;
-            height: 40px;
-            border-radius: 20px;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # --- Header Section ---
-    col_header_1, col_header_2 = st.columns([1, 4])
-    with col_header_1:
-        st.title("🎧") # Just icon
-    with col_header_2:
-        st.title("PDF Voice Reader")
-        st.caption("Turn any PDF into an instant audiobook.")
-
+    st.markdown('<h1 style="color:#4A90E2;">PDF Voice Reader 🎧</h1>', unsafe_allow_html=True)
+    st.caption("Turn any PDF into an instant audiobook with your preferred voice.")
     st.markdown("---")
 
-    # --- Session State Init ---
     if 'pdf_total_pages' not in st.session_state:
         st.session_state.pdf_total_pages = 0
 
-    # --- Main Content Area ---
-    
-    # 1. Main Controls & Input (Left Column)
-    col_left, col_right = st.columns([1, 1], gap="large")
-    
-    with col_left:
-        st.markdown("### 1. Upload Document")
-        uploaded_file = st.file_uploader("Select a PDF file", type=["pdf"], label_visibility="collapsed")
-        
-        if not uploaded_file:
-            # --- Empty State / Onboarding ---
-            st.info("👋 **Welcome!** To get started:")
-            st.markdown("""
-            1. Upload a PDF file above.
-            2. Select the pages you want to listen to.
-            3. Click **Play** to generate audio.
-            """)
-            st.markdown("---")
-            st.caption("🔒 Valid for text-based PDFs up to 200MB. Your files are processed securely in memory.")
-        
-        else:
-            # File Info Card
-            try:
-                if st.session_state.pdf_total_pages == 0:
-                     doc_temp = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-                     st.session_state.pdf_total_pages = len(doc_temp)
-                     uploaded_file.seek(0)
-
-                st.success(f"✅ **{uploaded_file.name}** loaded successfully! ({st.session_state.pdf_total_pages} pages)")
-                
-                # Page Range Selection Card
-                st.markdown("### 2. Select Range")
-                with st.container():
-                     c1, c2 = st.columns(2)
-                     with c1:
-                         start_page = st.number_input("Start Page", 1, st.session_state.pdf_total_pages, 1)
-                     with c2:
-                         end_page = st.number_input("End Page", 1, st.session_state.pdf_total_pages, st.session_state.pdf_total_pages)
-                     
-                     if start_page > end_page:
-                         st.error("Start Page must be ≤ End Page")
-
-            except Exception as e:
-                st.error("Error loading PDF. Please ensure it is a valid file.")
-
-    # 2. Playback & Output (Right Column)
-    with col_right:
-        if uploaded_file and st.session_state.pdf_total_pages > 0 and start_page <= end_page:
-            st.markdown("### 3. Listen")
-            
-            # Processing Logic
-            if 'start_page' not in locals(): start_page = 1
-            if 'end_page' not in locals(): end_page = st.session_state.pdf_total_pages
-            
-            with st.spinner("Processing text..."):
-                pages_text, _ = extract_text_from_pdf(uploaded_file, start_page, end_page)
-
-            if pages_text:
-                # Reader Interface
-                tab1, tab2 = st.tabs(["🎧 Audio Player", "📄 Text Preview"])
-                
-                with tab1:
-                    # Page Navigation for Reading
-                    # FIX: Use absolute page numbers for slider to avoid formatting error
-                    current_page_num = st.slider(
-                        "Current Page", 
-                        min_value=start_page,
-                        max_value=end_page,
-                        value=start_page
-                    )
-                    
-                    # Map absolute page number back to list index (0-based)
-                    # pages_text[0] corresponds to start_page
-                    page_idx = current_page_num - start_page
-                    current_text = pages_text[page_idx]
-                    
-                    # Generate Audio
-                    if st.button("▶️ Generate & Play Audio", type="primary", use_container_width=True):
-                         with st.spinner("Generating voice..."):
-                            try:
-                                audio_fp = text_to_speech(current_text)
-                                if audio_fp:
-                                    audio_bytes = audio_fp.read()
-                                    b64 = base64.b64encode(audio_bytes).decode()
-                                    
-                                    # HTML5 Audio Player
-                                    md_audio = f"""
-                                        <audio controls autoplay>
-                                        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-                                        </audio>
-                                    """
-                                    st.markdown(md_audio, unsafe_allow_html=True)
-                                    
-                                    # Download
-                                    st.download_button("📥 Download MP3", audio_bytes, f"page_{current_page_num}.mp3", "audio/mp3", use_container_width=True)
-                                else:
-                                    st.warning("No readable text on this page.")
-                            except Exception as e:
-                                st.error(f"TTS Error: {e}")
-                                
-                with tab2:
-                    st.text_area("Content", current_text, height=400)
-            else:
-                 st.warning("No text found in the selected range.")
-                 
-        else:
-            # Right column empty state
-            if not uploaded_file:
-                 st.markdown(" ") # Spacer
-                 st.image("https://cdn-icons-png.flaticon.com/512/337/337946.png", width=150, caption="Listen anywhere") # Placeholder icon
-
-    # --- Sidebar: Settings ---
+    # --- Sidebar ---
     with st.sidebar:
         st.header("⚙️ Settings")
-        st.subheader("Voice Options")
-        speed = st.select_slider("Speed multiplier", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0], 1.0)
-        st.caption("Note: Speed adjustment is currently handled by the browser player controls.")
         
+        st.subheader("🎤 Voice Selection")
+        selected_voice_name = st.selectbox(
+            "Choose Speaker", 
+            list(VOICE_MAP.keys()),
+            index=0
+        )
+        voice_data = VOICE_MAP[selected_voice_name]
+        
+        # Audio Preview
+        col_s1, col_s2 = st.columns([1, 2])
+        with col_s1:
+            if st.button("▶️ Test", help="Play sample"):
+                play_voice_sample(voice_data["sample"], voice_data["lang"], voice_data["tld"])
+        with col_s2:
+            st.caption(f"Accent: {voice_data['tld']}")
+            
         st.divider()
-        st.markdown("**About**")
-        st.markdown("Built with Streamlit & gTTS.")
+        st.subheader("⚡ Playback Speed")
+        speed = st.select_slider("Multiplier", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0], 1.0)
+
+    # --- Layout ---
+    col_left, col_right = st.columns([1, 1], gap="large")
+
+    with col_left:
+        st.markdown("### 1. Upload & Range")
+        uploaded_file = st.file_uploader("Select PDF", type=["pdf"], label_visibility="collapsed")
+        
+        if uploaded_file:
+            try:
+                if st.session_state.pdf_total_pages == 0:
+                     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+                     st.session_state.pdf_total_pages = len(doc)
+                     uploaded_file.seek(0)
+                
+                st.success(f"Loaded: {uploaded_file.name} ({st.session_state.pdf_total_pages} pages)")
+                
+                with st.container():
+                     c1, c2 = st.columns(2)
+                     start = c1.number_input("Start Page", 1, st.session_state.pdf_total_pages, 1)
+                     end = c2.number_input("End Page", 1, st.session_state.pdf_total_pages, st.session_state.pdf_total_pages)
+            except:
+                st.error("Invalid PDF")
+        else:
+            st.info("Upload a PDF to begin.")
+            st.markdown("""
+            <div style="background-color: #1A1E2A; padding: 15px; border-radius: 8px; color: #A8B0C0;">
+                <small>Supported: Text-based PDFs. Images excluded.</small>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with col_right:
+        st.markdown("### 2. Player")
+        
+        if uploaded_file and st.session_state.pdf_total_pages > 0:
+            if 'start' not in locals(): start = 1
+            if 'end' not in locals(): end = st.session_state.pdf_total_pages
+            
+            if start <= end:
+                 # Extraction
+                 with st.spinner("Preparing text..."):
+                     pages, _ = extract_text_from_pdf(uploaded_file, start, end)
+                 
+                 if pages:
+                     # Navigation
+                     curr_page = st.slider("Chapter Navigation", start, end, start)
+                     raw_idx = curr_page - start
+                     curr_text = pages[raw_idx]
+                     
+                     st.markdown("---")
+                     
+                     # Generate
+                     if st.button("🔊 Generate Audio for Page", type="primary", use_container_width=True):
+                         with st.spinner(f"Synthesizing voice ({selected_voice_name})..."):
+                             audio_fp = text_to_speech(curr_text, voice_data["lang"], voice_data["tld"])
+                             if audio_fp:
+                                 b64 = base64.b64encode(audio_fp.read()).decode()
+                                 st.markdown(f"""
+                                     <div style="background-color: #1A1E2A; padding: 10px; border-radius: 8px; margin-top: 10px;">
+                                         <audio controls autoplay style="width:100%;">
+                                             <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                                         </audio>
+                                     </div>
+                                 """, unsafe_allow_html=True)
+                             else:
+                                 st.warning("No text extracted.")
+                     
+                     with st.expander("📄 View Text"):
+                         st.text_area("Content", curr_text, height=200)
 
 if __name__ == "__main__":
     main()
