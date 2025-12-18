@@ -3,203 +3,242 @@ import fitz  # PyMuPDF
 from gtts import gTTS
 import io
 import base64
+import re
 
-# Page Config
+# --- Page Config ---
 st.set_page_config(
     page_title="PDF Voice Reader",
-    page_icon="🗣️",
-    layout="centered",
-    initial_sidebar_state="expanded"
+    page_icon="🎧",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for styling
-# Custom CSS for styling
+# --- Custom CSS ---
 st.markdown("""
-    <style>
+<style>
+    /* Dark Theme */
     .stApp {
-        background-color: #0e1117;
-        color: #fafafa;
+        background-color: #0F1419;
+        color: #E8E8E8;
     }
-    .stButton>button {
-        width: 100%;
+    h1, h2, h3, p, label { color: #E8E8E8 !important; }
+    
+    /* Line Container */
+    .line-container {
+        max-height: 400px;
+        overflow-y: auto;
+        background-color: #1A1E2A;
         border-radius: 8px;
-        height: 3em;
-        background-color: #ff4b4b;
+        padding: 15px;
+        border: 1px solid #2E3847;
+    }
+    
+    /* Normal Line */
+    .text-line {
+        padding: 8px 12px;
+        margin: 4px 0;
+        border-radius: 6px;
+        font-size: 14px;
+        line-height: 1.6;
+        color: #A8B0C0;
+        background-color: #252D3D;
+        border-left: 3px solid transparent;
+    }
+    
+    /* Highlighted (Currently Reading) Line */
+    .text-line.current {
+        background-color: #4A90E2;
         color: white;
-        font-weight: bold;
-        border: none;
-        transition: all 0.3s ease;
+        font-weight: 600;
+        border-left: 3px solid #2ECC71;
+        box-shadow: 0 2px 8px rgba(74, 144, 226, 0.3);
     }
-    .stButton>button:hover {
-        background-color: #ff3333;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-    }
-    .stProgress > div > div > div > div {
-        background-color: #ff4b4b;
-    }
-    div[data-testid="stExpander"] div[role="button"] p {
-        font-size: 1.1rem;
+    
+    /* Buttons */
+    .stButton > button {
+        background-color: #4A90E2;
+        color: white;
+        border-radius: 8px;
         font-weight: 600;
     }
-    </style>
-    """, unsafe_allow_html=True)
+    .stButton > button:hover {
+        background-color: #2E5C8A;
+    }
+    
+    /* PDF Viewer Iframe */
+    .pdf-viewer {
+        width: 100%;
+        height: 500px;
+        border: 1px solid #2E3847;
+        border-radius: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# --- Voice Configuration - WOMEN VOICES ONLY (Using gTTS TLDs) ---
+# --- Voice Configuration ---
 VOICE_MAP = {
-    "👩 Sarah (American, Neutral)": {"tld": "com", "lang": "en", "sample": "Hello, this is Sarah speaking."},
-    "👩 Grace (British, Professional)": {"tld": "co.uk", "lang": "en", "sample": "Good morning, I am Grace."},
-    "👩 Emma (American, Warm)": {"tld": "com", "lang": "en", "sample": "Hi there, it's Emma here."},
-    "👩 Zara (Neutral, Modern)": {"tld": "com", "lang": "en", "sample": "Welcome, I'm Zara."},
-    "👩 Maya (Indian, Clear)": {"tld": "co.in", "lang": "en", "sample": "Namaste, I'm Maya speaking."},
-    "👩 Lisa (Australian, Friendly)": {"tld": "com.au", "lang": "en", "sample": "G'day, this is Lisa."},
-    "👩 Sophia (American, Calm)": {"tld": "com", "lang": "en", "sample": "Hello, Sophia speaking here."},
+    "👩 Sarah (American)": {"tld": "com", "lang": "en"},
+    "👩 Grace (British)": {"tld": "co.uk", "lang": "en"},
+    "👩 Maya (Indian)": {"tld": "co.in", "lang": "en"},
+    "👩 Lisa (Australian)": {"tld": "com.au", "lang": "en"},
 }
 
-def play_voice_sample(text, lang, tld):
-    """Generates and plays a short voice sample."""
+# --- Helper Functions ---
+def extract_lines_from_pdf(file_bytes):
+    """Extracts text from PDF and splits into lines/sentences."""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        all_text = ""
+        for page in doc:
+            all_text += page.get_text() + "\n"
+        
+        # Split into sentences/lines (by period, newline, or fixed length)
+        lines = re.split(r'(?<=[.!?])\s+|\n+', all_text)
+        # Filter empty lines and strip whitespace
+        lines = [line.strip() for line in lines if line.strip()]
+        return lines
+    except Exception as e:
+        st.error(f"Error extracting text: {e}")
+        return []
+
+def generate_audio(text, lang='en', tld='com'):
+    """Generates audio from text using gTTS."""
+    if not text.strip():
+        return None
     try:
         tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
         fp = io.BytesIO()
         tts.write_to_fp(fp)
         fp.seek(0)
-        st.audio(fp, format="audio/mp3")
-    except Exception as e:
-        st.error(f"Sample Error: {e}")
-
-def extract_text_from_pdf(file, start_page=1, end_page=None):
-    """Extracts text from a PDF file within a specific range."""
-    try:
-        doc = fitz.open(stream=file.read(), filetype="pdf")
-        total_pages = len(doc)
-        
-        # Validate/Adjust range
-        if end_page is None or end_page > total_pages:
-            end_page = total_pages
-        if start_page < 1:
-            start_page = 1
-            
-        text = []
-        # PyMuPDF is 0-indexed, UI is 1-indexed
-        for i in range(start_page - 1, end_page):
-            page = doc.load_page(i)
-            text.append(page.get_text())
-            
-        return text, total_pages
-    except Exception as e:
-        st.error(f"Error reading PDF: {e}")
-        return [], 0
-
-def text_to_speech(text, lang='en', tld='com'):
-    """Converts text to speech using gTTS with accent support."""
-    if not text.strip():
+        return fp
+    except:
         return None
-    tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
-    fp = io.BytesIO()
-    tts.write_to_fp(fp)
-    fp.seek(0)
-    return fp
+
+def render_lines_with_highlight(lines, current_idx):
+    """Renders all lines with the current line highlighted."""
+    html = '<div class="line-container">'
+    for i, line in enumerate(lines):
+        # Truncate long lines for display (keep full in title for tooltip)
+        display_line = line[:150] + "..." if len(line) > 150 else line
+        css_class = "text-line current" if i == current_idx else "text-line"
+        html += f'<div class="{css_class}" title="{line}">{i+1}. {display_line}</div>'
+    html += '</div>'
+    return html
 
 def main():
-    st.markdown('<h1 style="color:#4A90E2;">PDF Voice Reader 🎧</h1>', unsafe_allow_html=True)
-    st.caption("Turn any PDF into an instant audiobook with your preferred voice.")
+    st.markdown("<h1 style='text-align:center; color:#4A90E2;'>🎧 PDF Voice Reader</h1>", unsafe_allow_html=True)
+    st.caption("Upload a PDF, navigate line-by-line, and listen with text-to-speech.")
     st.markdown("---")
 
-    if 'pdf_total_pages' not in st.session_state:
-        st.session_state.pdf_total_pages = 0
+    # --- Session State Initialization ---
+    if 'lines' not in st.session_state:
+        st.session_state.lines = []
+    if 'current_line_index' not in st.session_state:
+        st.session_state.current_line_index = 0
+    if 'is_playing' not in st.session_state:
+        st.session_state.is_playing = False
+    if 'pdf_bytes' not in st.session_state:
+        st.session_state.pdf_bytes = None
 
-    # --- Sidebar ---
+    # --- Sidebar: Voice Selection ---
     with st.sidebar:
-        st.header("⚙️ Settings")
-        
-        st.subheader("🎤 Voice Selection")
-        selected_voice_name = st.selectbox(
-            "Choose Speaker", 
-            list(VOICE_MAP.keys()),
-            index=0
-        )
-        voice_data = VOICE_MAP[selected_voice_name]
-        
-        # Audio Preview
-        col_s1, col_s2 = st.columns([1, 2])
-        with col_s1:
-            if st.button("▶️ Test", help="Play sample"):
-                play_voice_sample(voice_data["sample"], voice_data["lang"], voice_data["tld"])
-        with col_s2:
-            st.caption(f"Accent: {voice_data['tld']}")
+        st.header("🎤 Voice")
+        selected_voice = st.selectbox("Choose Voice", list(VOICE_MAP.keys()))
+        voice_data = VOICE_MAP[selected_voice]
+
+    # --- File Upload ---
+    uploaded_file = st.file_uploader("📄 Upload PDF", type=["pdf"], label_visibility="collapsed")
+
+    if uploaded_file:
+        # Store PDF bytes and extract lines (only on new upload)
+        file_bytes = uploaded_file.read()
+        if st.session_state.pdf_bytes != file_bytes:
+            st.session_state.pdf_bytes = file_bytes
+            st.session_state.lines = extract_lines_from_pdf(file_bytes)
+            st.session_state.current_line_index = 0
+            st.session_state.is_playing = False
+
+        lines = st.session_state.lines
+        current_idx = st.session_state.current_line_index
+        total_lines = len(lines)
+
+        if total_lines == 0:
+            st.warning("No text could be extracted from this PDF.")
+            return
+
+        # --- Split Layout: PDF Viewer | Controls ---
+        col_pdf, col_controls = st.columns([1, 1], gap="large")
+
+        with col_pdf:
+            st.markdown("### 📖 PDF Preview")
+            # Embed PDF as base64 iframe
+            b64_pdf = base64.b64encode(st.session_state.pdf_bytes).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" class="pdf-viewer"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+
+        with col_controls:
+            st.markdown("### 🎧 Reading Controls")
             
-        st.divider()
-        st.subheader("⚡ Playback Speed")
-        speed = st.select_slider("Multiplier", [0.5, 0.75, 1.0, 1.25, 1.5, 2.0], 1.0)
-
-    # --- Layout ---
-    col_left, col_right = st.columns([1, 1], gap="large")
-
-    with col_left:
-        st.markdown("### 1. Upload & Range")
-        uploaded_file = st.file_uploader("Select PDF", type=["pdf"], label_visibility="collapsed")
-        
-        if uploaded_file:
-            try:
-                if st.session_state.pdf_total_pages == 0:
-                     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-                     st.session_state.pdf_total_pages = len(doc)
-                     uploaded_file.seek(0)
-                
-                st.success(f"Loaded: {uploaded_file.name} ({st.session_state.pdf_total_pages} pages)")
-                
-                with st.container():
-                     c1, c2 = st.columns(2)
-                     start = c1.number_input("Start Page", 1, st.session_state.pdf_total_pages, 1)
-                     end = c2.number_input("End Page", 1, st.session_state.pdf_total_pages, st.session_state.pdf_total_pages)
-            except:
-                st.error("Invalid PDF")
-        else:
-            st.info("Upload a PDF to begin.")
-            st.markdown("""
-            <div style="background-color: #1A1E2A; padding: 15px; border-radius: 8px; color: #A8B0C0;">
-                <small>Supported: Text-based PDFs. Images excluded.</small>
-            </div>
-            """, unsafe_allow_html=True)
-
-    with col_right:
-        st.markdown("### 2. Player")
-        
-        if uploaded_file and st.session_state.pdf_total_pages > 0:
-            if 'start' not in locals(): start = 1
-            if 'end' not in locals(): end = st.session_state.pdf_total_pages
+            # Status
+            st.info(f"📍 **Line {current_idx + 1} of {total_lines}**")
             
-            if start <= end:
-                 # Extraction
-                 with st.spinner("Preparing text..."):
-                     pages, _ = extract_text_from_pdf(uploaded_file, start, end)
-                 
-                 if pages:
-                     # Navigation
-                     curr_page = st.slider("Chapter Navigation", start, end, start)
-                     raw_idx = curr_page - start
-                     curr_text = pages[raw_idx]
-                     
-                     st.markdown("---")
-                     
-                     # Generate
-                     if st.button("🔊 Generate Audio for Page", type="primary", use_container_width=True):
-                         with st.spinner(f"Synthesizing voice ({selected_voice_name})..."):
-                             audio_fp = text_to_speech(curr_text, voice_data["lang"], voice_data["tld"])
-                             if audio_fp:
-                                 b64 = base64.b64encode(audio_fp.read()).decode()
-                                 st.markdown(f"""
-                                     <div style="background-color: #1A1E2A; padding: 10px; border-radius: 8px; margin-top: 10px;">
-                                         <audio controls autoplay style="width:100%;">
-                                             <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-                                         </audio>
-                                     </div>
-                                 """, unsafe_allow_html=True)
-                             else:
-                                 st.warning("No text extracted.")
-                     
-                     with st.expander("📄 View Text"):
-                         st.text_area("Content", curr_text, height=200)
+            # Navigation Buttons
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                if st.button("⏮️ First"):
+                    st.session_state.current_line_index = 0
+                    st.rerun()
+            with c2:
+                if st.button("◀️ Prev"):
+                    if current_idx > 0:
+                        st.session_state.current_line_index -= 1
+                        st.rerun()
+            with c3:
+                if st.button("▶️ Next"):
+                    if current_idx < total_lines - 1:
+                        st.session_state.current_line_index += 1
+                        st.rerun()
+            with c4:
+                if st.button("⏭️ Last"):
+                    st.session_state.current_line_index = total_lines - 1
+                    st.rerun()
+            
+            # Line Slider
+            new_idx = st.slider("Jump to Line", 1, total_lines, current_idx + 1) - 1
+            if new_idx != current_idx:
+                st.session_state.current_line_index = new_idx
+                st.rerun()
+
+            st.markdown("---")
+
+            # Play Current Line
+            if st.button("🔊 Play Current Line", type="primary", use_container_width=True):
+                current_text = lines[current_idx]
+                audio = generate_audio(current_text, voice_data["lang"], voice_data["tld"])
+                if audio:
+                    st.audio(audio, format="audio/mp3")
+                else:
+                    st.warning("Could not generate audio for this line.")
+            
+            st.markdown("---")
+            
+            # Highlighted Lines Display
+            st.markdown("### 📝 Text (Current Line Highlighted)")
+            lines_html = render_lines_with_highlight(lines, current_idx)
+            st.markdown(lines_html, unsafe_allow_html=True)
+
+    else:
+        # No file uploaded - show instructions
+        st.markdown("""
+        <div style="background-color: #1A1E2A; padding: 30px; border-radius: 12px; text-align: center; border: 2px dashed #4A90E2;">
+            <h3 style="color: #4A90E2;">📄 Upload a PDF to Start</h3>
+            <p style="color: #A8B0C0;">
+                1. Click "Browse files" or drag & drop a PDF.<br>
+                2. Use the controls to navigate line-by-line.<br>
+                3. Click "Play Current Line" to hear the text read aloud.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
