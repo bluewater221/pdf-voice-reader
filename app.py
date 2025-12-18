@@ -87,18 +87,19 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    # --- Custom CSS for Modern SaaS Look ---
+    # --- Custom CSS for Dark Blue Theme ---
     st.markdown("""
         <style>
         /* Global Font & Colors */
         .stApp {
             font-family: 'Inter', sans-serif;
+            background-color: #001a4d;
+            color: white;
         }
         
         /* Headers */
-        h1, h2, h3 {
-            color: #111827;
-            font-weight: 700 !important;
+        h1, h2, h3, p, div, span, label {
+            color: white !important;
         }
         
         /* Buttons */
@@ -106,24 +107,37 @@ def main():
             border-radius: 8px;
             font-weight: 600;
             border: none;
+            background-color: #ff4b4b; /* Keep accent color for visibility */
+            color: white;
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
             transition: all 0.2s;
         }
         .stButton>button:hover {
+            opacity: 0.9;
             transform: translateY(-1px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
         
         /* Custom Cards / Containers */
-        .css-1r6slb0 { /* Streamlit container class approximation for card effect */
-            background-color: white;
+        .css-1r6slb0, .stFileUploader { 
+            background-color: #003366; /* Slightly lighter blue for contrast */
             padding: 1.5rem;
             border-radius: 12px;
-            border: 1px solid #E5E7EB;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+            border: 1px solid #004080;
         }
         
-        /* Audio Player Styling in Markdown */
+        /* Inputs */
+        .stTextInput>div>div>input, .stNumberInput>div>div>input {
+            color: white;
+            background-color: #00264d;
+        }
+        
+        /* Expander */
+        .streamlit-expanderHeader {
+            background-color: #003366;
+            color: white;
+        }
+        
+        /* Audio Player Styling */
         audio {
             width: 100%;
             height: 40px;
@@ -138,7 +152,7 @@ def main():
         st.title("🎧") # Just icon
     with col_header_2:
         st.title("PDF Voice Reader")
-        st.caption("Turn any PDF into an instant audiobook. Perfect for students & professionals.")
+        st.caption("Turn any PDF into an instant audiobook.")
 
     st.markdown("---")
 
@@ -209,14 +223,17 @@ def main():
                 
                 with tab1:
                     # Page Navigation for Reading
-                    page_idx = st.slider(
+                    # FIX: Use absolute page numbers for slider to avoid formatting error
+                    current_page_num = st.slider(
                         "Current Page", 
-                        0, 
-                        len(pages_text)-1, 
-                        0,
-                        format=f"Page {start_page + '%d'}"
+                        min_value=start_page,
+                        max_value=end_page,
+                        value=start_page
                     )
                     
+                    # Map absolute page number back to list index (0-based)
+                    # pages_text[0] corresponds to start_page
+                    page_idx = current_page_num - start_page
                     current_text = pages_text[page_idx]
                     
                     # Generate Audio
@@ -237,7 +254,7 @@ def main():
                                     st.markdown(md_audio, unsafe_allow_html=True)
                                     
                                     # Download
-                                    st.download_button("📥 Download MP3", audio_bytes, f"page_{start_page+page_idx}.mp3", "audio/mp3", use_container_width=True)
+                                    st.download_button("📥 Download MP3", audio_bytes, f"page_{current_page_num}.mp3", "audio/mp3", use_container_width=True)
                                 else:
                                     st.warning("No readable text on this page.")
                             except Exception as e:
