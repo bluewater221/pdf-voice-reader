@@ -45,12 +45,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Voice Configuration ---
+# --- Voice Configuration (7 Female Voices) ---
 VOICE_MAP = {
-    "👩 Sarah (American)": {"tld": "com", "lang": "en"},
-    "👩 Grace (British)": {"tld": "co.uk", "lang": "en"},
-    "👩 Maya (Indian)": {"tld": "co.in", "lang": "en"},
-    "👩 Lisa (Australian)": {"tld": "com.au", "lang": "en"},
+    "👩 Sarah (American, Neutral)": {"tld": "com", "lang": "en"},
+    "👩 Grace (British, Professional)": {"tld": "co.uk", "lang": "en"},
+    "👩 Emma (American, Warm)": {"tld": "us", "lang": "en"},
+    "👩 Zara (Neutral, Modern)": {"tld": "ca", "lang": "en"},
+    "👩 Maya (Indian, Clear)": {"tld": "co.in", "lang": "en"},
+    "👩 Lisa (Australian, Friendly)": {"tld": "com.au", "lang": "en"},
+    "👩 Sophia (South African)": {"tld": "co.za", "lang": "en"},
 }
 
 # --- Helper Functions ---
@@ -179,36 +182,88 @@ def main():
 
             st.markdown("---")
 
-            # Play Current Page
-            if st.button("🔊 Read This Page", type="primary", use_container_width=True):
+            # --- Audio Generation Options ---
+            st.markdown("### 🎧 Generate Audio")
+            
+            # Option 1: Current Page
+            if st.button("🔊 Read This Page", use_container_width=True):
                 page_text = pages_text[current_page] if current_page < len(pages_text) else ""
                 if page_text.strip():
                     with st.spinner("Generating audio..."):
                         audio = generate_audio(page_text, voice_data["lang"], voice_data["tld"])
                         if audio:
                             st.audio(audio, format="audio/mp3")
+                            st.download_button("📥 Download", audio.getvalue(), f"page_{current_page+1}.mp3", "audio/mp3")
                 else:
                     st.warning("No text on this page.")
 
-            # Read Full PDF
             st.markdown("---")
-            if st.button("🎧 Read Entire PDF", use_container_width=True):
-                full_text = " ".join([t for t in pages_text if t.strip()])
-                if full_text:
-                    with st.spinner(f"Generating audio for {len(full_text)} characters..."):
-                        audio = generate_audio(full_text, voice_data["lang"], voice_data["tld"])
-                        if audio:
-                            st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download MP3", audio.getvalue(), "full_audio.mp3", "audio/mp3")
-                else:
-                    st.error("No text found in PDF.")
+            
+            # Option 2: Custom Page Range
+            st.markdown("**📚 Custom Page Range:**")
+            col_start, col_end = st.columns(2)
+            with col_start:
+                start_page = st.number_input("From Page", 1, total_pages, 1)
+            with col_end:
+                end_page = st.number_input("To Page", 1, total_pages, total_pages)
+            
+            if start_page > end_page:
+                st.error("Start page must be ≤ End page")
+            else:
+                if st.button(f"🎧 Read Pages {start_page} to {end_page}", type="primary", use_container_width=True):
+                    # Extract text from selected range
+                    range_text = " ".join([
+                        pages_text[i] for i in range(start_page - 1, end_page) 
+                        if i < len(pages_text) and pages_text[i].strip()
+                    ])
+                    
+                    if range_text:
+                        char_count = len(range_text)
+                        st.info(f"📊 {char_count} characters • ~{char_count//150} seconds of audio")
+                        
+                        with st.spinner(f"Generating audio for pages {start_page}-{end_page}..."):
+                            audio = generate_audio(range_text, voice_data["lang"], voice_data["tld"])
+                            if audio:
+                                st.audio(audio, format="audio/mp3")
+                                st.download_button(
+                                    "📥 Download MP3", 
+                                    audio.getvalue(), 
+                                    f"pages_{start_page}_to_{end_page}.mp3", 
+                                    "audio/mp3",
+                                    use_container_width=True
+                                )
+                    else:
+                        st.error("No text found in selected page range.")
 
             st.markdown("---")
             
-            # Show page text
-            st.markdown("### 📝 Page Text")
+            # Show page text with highlighting
+            st.markdown("### 📝 Currently Reading (Highlighted)")
             page_text = pages_text[current_page] if current_page < len(pages_text) else ""
-            st.markdown(f'<div class="page-text-box">{page_text[:3000] if page_text else "No text on this page."}</div>', unsafe_allow_html=True)
+            if page_text:
+                # Display with yellow highlight styling
+                st.markdown(f'''
+                <div style="
+                    background: linear-gradient(135deg, #4A90E2 0%, #2E5C8A 100%);
+                    padding: 20px;
+                    border-radius: 12px;
+                    border-left: 5px solid #2ECC71;
+                    margin: 10px 0;
+                    box-shadow: 0 4px 15px rgba(74, 144, 226, 0.3);
+                ">
+                    <p style="
+                        color: white;
+                        font-size: 16px;
+                        line-height: 1.8;
+                        margin: 0;
+                        font-weight: 500;
+                    ">
+                        {page_text[:2000]}{'...' if len(page_text) > 2000 else ''}
+                    </p>
+                </div>
+                ''', unsafe_allow_html=True)
+            else:
+                st.warning("No text on this page.")
 
     else:
         st.markdown("""
