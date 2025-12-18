@@ -280,26 +280,25 @@ def main():
             is_cooldown = remaining > 0
             
             btn_text = f"⚠️ Wait {remaining}s" if is_cooldown else "🔊 Read This Page"
-            
             if st.button(btn_text, disabled=is_cooldown, type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
-                
                 if len(text) > 5000:
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
-                
                 if text.strip():
                     with st.spinner("Generating..."):
-                        # Pass strict=True to check for rate limits
                         audio, status = make_audio(text, voice["lang"], voice["tld"])
-                        
                         if audio:
                             st.session_state.audio_data = audio
-                            st.rerun() # Rerun to show player immediately
+                            st.audio(audio, format="audio/mp3")
+                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
                         elif status == 429:
-                            st.session_state.tts_limit = time.time() + 20 
+                            st.session_state.tts_limit = time.time() + 20
                             st.rerun()
+                        else:
+                            st.error("Audio generation failed.")
                 else:
                     st.warning("No text on this page")
+
             
             st.markdown("---")
             
