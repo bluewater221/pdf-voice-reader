@@ -148,6 +148,7 @@ def main():
         st.sidebar.markdown("### State Inspector")
         st.sidebar.write(f"**Current Page:** {st.session_state.get('page')}")
         st.sidebar.write(f"**Total Pages:** {st.session_state.get('pages')}")
+        st.sidebar.write(f"**Last Action:** {st.session_state.get('last_action', 'None')}")
         st.sidebar.write(f"**Audio Data:** {'Present' if st.session_state.get('audio_data') else 'None'}")
         st.sidebar.json(st.session_state)
     
@@ -283,11 +284,19 @@ def main():
                 new_p = st.session_state.page + delta
                 if 0 <= new_p < st.session_state.pages:
                     st.session_state.page = new_p
-                    st.session_state.audio_data = None # Clear audio on nav
+                    st.session_state.audio_data = None
+                    st.session_state.last_action = f"Navigated delta {delta}"
+                    # Force sync slider
+                    if 'nav_slider' in st.session_state: 
+                        del st.session_state.nav_slider
             
             def set_page(p):
                 st.session_state.page = p
                 st.session_state.audio_data = None
+                st.session_state.last_action = f"Set page to {p}"
+                # Force sync slider
+                if 'nav_slider' in st.session_state: 
+                    del st.session_state.nav_slider
 
             # Navigation buttons
             nav1, nav2, nav3, nav4 = st.columns(4)
