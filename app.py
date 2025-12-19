@@ -254,20 +254,31 @@ def main():
                 st.warning("Cannot render page")
         
         with col2:
-            st.subheader("🎧 Controls")
+            # === PDF NAVIGATION SECTION ===
+            st.subheader("📑 PDF Navigation")
             
-            # Nav
-            c1, c2, c3, c4 = st.columns(4)
-            if c1.button("⏪ First"): st.session_state.page = 0; st.session_state.audio_data = None; st.rerun()
-            if c2.button("⬅️ Prev") and page > 0: st.session_state.page -= 1; st.session_state.audio_data = None; st.rerun()
-            if c3.button("Next ➡️") and page < pages-1: st.session_state.page += 1; st.session_state.audio_data = None; st.rerun()
-            if c4.button("Last ⏩"): st.session_state.page = pages-1; st.session_state.audio_data = None; st.rerun()
-            
+            # Page slider
             if pages > 1:
-                new_pg = st.slider("Page", 1, pages, page + 1) - 1
-                if new_pg != page: st.session_state.page = new_pg; st.session_state.audio_data = None; st.rerun()
+                new_pg = st.slider("Go to page", 1, pages, page + 1, key="nav_slider") - 1
+                if new_pg != page: 
+                    st.session_state.page = new_pg
+                    st.rerun()
+            
+            # Navigation buttons
+            nav1, nav2, nav3, nav4 = st.columns(4)
+            if nav1.button("⏪", help="First page", key="nav_first"): 
+                st.session_state.page = 0; st.rerun()
+            if nav2.button("◀️", help="Previous page", key="nav_prev") and page > 0: 
+                st.session_state.page -= 1; st.rerun()
+            if nav3.button("▶️", help="Next page", key="nav_next") and page < pages-1: 
+                st.session_state.page += 1; st.rerun()
+            if nav4.button("⏩", help="Last page", key="nav_last"): 
+                st.session_state.page = pages-1; st.rerun()
             
             st.markdown("---")
+            
+            # === AUDIO SECTION ===
+            st.subheader("🎧 Audio Reader")
             
             # Read This Page Button
             if st.button("🔊 Read This Page", type="primary", use_container_width=True):
@@ -295,29 +306,47 @@ def main():
             
             st.markdown("---")
             
-            # Range
+            # Range Reading Section
+            st.markdown("**📚 Read Multiple Pages**")
             r1, r2 = st.columns(2)
-            start = r1.number_input("From", 1, pages, 1)
-            end = r2.number_input("To", 1, pages, pages)
+            start = r1.number_input("From page", 1, pages, 1, key="range_start")
+            end = r2.number_input("To page", 1, pages, min(pages, 5), key="range_end")
             
             if start <= end:
-                if st.button(f"🎧 Read {start}-{end}", use_container_width=True, key="range_read"):
-                    range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
-                    if range_text.strip():
-                        st.info(f"📖 Reading Pages {start} to {end}...")
-                        with st.spinner("Generating audio..."):
-                            audio, status = make_audio(range_text, voice)
-                            if audio:
-                                st.session_state.audio_data = audio
-                                st.session_state.reading_page = f"{start}-{end}"  # Store range
-                                st.success(f"✅ Audio ready for Pages {start}-{end}!")
-                                st.audio(audio, format="audio/mp3")
-                                st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_range")
+                if st.button(f"🎧 Read Pages {start} to {end}", use_container_width=True, key="range_read"):
+                    # Generate audio page by page with progress
+                    all_audio = io.BytesIO()
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    total_pages = end - start + 1
+                    for i, pg in enumerate(range(start - 1, end)):
+                        if pg < len(texts) and texts[pg].strip():
+                            status_text.info(f"📖 Reading Page {pg + 1} of {start}-{end}...")
+                            progress_bar.progress((i + 1) / total_pages)
+                            
+                            audio_chunk, status = make_audio(texts[pg], voice)
+                            if audio_chunk:
+                                all_audio.write(audio_chunk)
+                    
+                    all_audio.seek(0)
+                    audio_data = all_audio.getvalue()
+                    
+                    if audio_data:
+                        st.session_state.audio_data = audio_data
+                        st.session_state.reading_page = f"{start}-{end}"
+                        progress_bar.progress(1.0)
+                        status_text.success(f"✅ Audio ready for Pages {start}-{end}!")
+                        st.audio(audio_data, format="audio/mp3")
+                        st.download_button("📥 Download MP3", audio_data, f"pages_{start}_{end}.mp3", "audio/mp3", key="dl_range")
+                    else:
+                        status_text.error("❌ No audio generated")
 
-            # Persistent Audio Player (shows what's currently loaded)
-            if st.session_state.audio_data:
+            # Persistent Audio Player
+            if 'audio_data' in st.session_state and st.session_state.audio_data:
+                st.markdown("---")
                 reading_info = st.session_state.get('reading_page', 'audio')
-                st.success(f"🎧 Now Playing: Page {reading_info}")
+                st.success(f"🎧 Audio Loaded: Page {reading_info}")
                 st.audio(st.session_state.audio_data, format="audio/mp3")
                 st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_persistent")
 
