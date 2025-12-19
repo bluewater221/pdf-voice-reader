@@ -284,7 +284,7 @@ def main():
                             st.session_state.audio_data = audio
                             st.success(f"✅ Audio generated!")
                             st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
+                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_page")
                         else:
                             st.error(f"❌ TTS failed")
                 else:
@@ -308,13 +308,13 @@ def main():
                                 st.session_state.audio_data = audio
                                 st.success("✅ Audio generated!")
                                 st.audio(audio, format="audio/mp3")
-                                st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
+                                st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_range")
 
             # Persistent Audio Player
             if st.session_state.audio_data:
                 st.success("✅ Ready to play!")
                 st.audio(st.session_state.audio_data, format="audio/mp3")
-                st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3")
+                st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_persistent")
 
             st.markdown("---")
             st.subheader("📝 Text")
