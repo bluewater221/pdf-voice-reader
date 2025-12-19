@@ -268,24 +268,33 @@ def main():
             nav1, nav2, nav3, nav4 = st.columns(4)
             
             if nav1.button("First", key="nav_first", use_container_width=True): 
+                st.info(f"🔧 DEBUG: First clicked, setting page to 0")
                 st.session_state.page = 0
                 st.rerun()
             
             if nav2.button("Prev", key="nav_prev", use_container_width=True): 
+                st.info(f"🔧 DEBUG: Prev clicked, current page={page}")
                 if page > 0:
                     st.session_state.page = page - 1
                     st.rerun()
+                else:
+                    st.warning("Already at first page")
             
             if nav3.button("Next", key="nav_next", use_container_width=True): 
+                st.info(f"🔧 DEBUG: Next clicked, current page={page}, total={pages}")
                 if page < pages - 1:
                     st.session_state.page = page + 1
                     st.rerun()
+                else:
+                    st.warning("Already at last page")
             
             if nav4.button("Last", key="nav_last", use_container_width=True): 
+                st.info(f"🔧 DEBUG: Last clicked, setting page to {pages-1}")
                 st.session_state.page = pages - 1
                 st.rerun()
             
-            st.markdown("---")
+            # Debug info
+            st.caption(f"📍 Current: Page {page + 1} of {pages}")
             
             # === AUDIO SECTION ===
             st.subheader("🎧 Audio Reader")
