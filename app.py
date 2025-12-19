@@ -264,22 +264,26 @@ def main():
             
             st.markdown("---")
             
-            # Read This Page Button (no cooldown for now)
+            # Read This Page Button
             if st.button("🔊 Read This Page", type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
+                st.info(f"🔧 DEBUG: Text length = {len(text)} chars")
+                
                 if len(text) > 5000:
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
+                
                 if text.strip():
-                    with st.spinner("Generating audio..."):
-                        audio, status = make_audio(text, voice["lang"], voice["tld"])
-                        if audio:
-                            st.session_state.audio_data = audio
-                            st.rerun()  # Rerun to show persistent player
-                        elif status == 429:
-                            st.session_state.tts_limit = time.time() + 20
-                            st.rerun()
-                        else:
-                            st.error("TTS Error: Could not generate audio.")
+                    st.info(f"🔧 DEBUG: Calling make_audio with lang={voice['lang']}, tld={voice['tld']}")
+                    audio, status = make_audio(text, voice["lang"], voice["tld"])
+                    st.info(f"🔧 DEBUG: make_audio returned status={status}, audio_size={len(audio) if audio else 0}")
+                    
+                    if audio:
+                        st.session_state.audio_data = audio
+                        st.success(f"✅ Audio generated! {len(audio)} bytes")
+                        st.audio(audio, format="audio/mp3")
+                        st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
+                    else:
+                        st.error(f"❌ TTS failed with status {status}")
                 else:
                     st.warning("No text on this page")
 
