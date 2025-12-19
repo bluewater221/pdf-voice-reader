@@ -277,17 +277,16 @@ def main():
                 if len(text) > 5000:
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
                 if text.strip():
-                    with st.spinner("Generating..."):
+                    with st.spinner("Generating audio..."):
                         audio, status = make_audio(text, voice["lang"], voice["tld"])
                         if audio:
                             st.session_state.audio_data = audio
-                            st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
+                            st.rerun()  # Rerun to show persistent player
                         elif status == 429:
                             st.session_state.tts_limit = time.time() + 20
                             st.rerun()
                         else:
-                            st.error("Audio generation failed.")
+                            st.error("TTS Error: Could not generate audio.")
                 else:
                     st.warning("No text on this page")
 
@@ -305,12 +304,13 @@ def main():
                 if st.button(range_btn_text, disabled=is_cooldown, use_container_width=True, key="range_read"):
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
-                        with st.spinner("Generating..."):
+                        with st.spinner("Generating audio..."):
                             audio, status = make_audio(range_text, voice["lang"], voice["tld"])
                             if audio:
                                 st.session_state.audio_data = audio
+                                st.rerun()  # Rerun to show persistent player
                             elif status == 429:
-                                st.session_state.tts_limit = time.time() + 20 # Reduced to 20s
+                                st.session_state.tts_limit = time.time() + 20
                                 st.rerun()
 
             # Persistent Audio Player
