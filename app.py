@@ -71,43 +71,28 @@ def get_page_image(file_bytes, page_num):
 
 import time
 
-@st.cache_data(show_spinner=False)
 def make_audio(text, lang, tld):
     """Generate audio. Returns (audio_bytes, status_code)."""
-    st.write(f"🔧 DEBUG: make_audio called with {len(text)} chars, lang={lang}, tld={tld}")
-    
     if not text or not text.strip():
-        st.write("🔧 DEBUG: Empty text")
         return None, 400
     
     # Limit text length
     text = text[:5000]
     
-    # Retry logic with exponential backoff
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            st.write(f"🔧 DEBUG: Attempt {attempt + 1}")
-            tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
-            audio = io.BytesIO()
-            tts.write_to_fp(audio)
-            audio.seek(0)
-            audio_bytes = audio.getvalue()
-            st.write(f"🔧 DEBUG: Success! Audio size: {len(audio_bytes)} bytes")
-            return audio_bytes, 200
-        except Exception as e:
-            st.write(f"🔧 DEBUG: Exception: {e}")
-            if "429" in str(e):
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 2
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    return None, 429
-            else:
-                st.error(f"Audio Error: {e}")
-                return None, 500
-    return None, 500
+    # Single attempt (no caching, fresh each time)
+    try:
+        tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
+        audio = io.BytesIO()
+        tts.write_to_fp(audio)
+        audio.seek(0)
+        return audio.getvalue(), 200
+    except Exception as e:
+        error_str = str(e)
+        if "429" in error_str:
+            return None, 429
+        else:
+            st.error(f"TTS Error: {error_str}")
+            return None, 500
 
 # --- Supabase Functions ---
 def cloud_upload(data, name, bucket="pdfs"):
