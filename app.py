@@ -139,6 +139,7 @@ def cloud_delete(name, bucket="pdfs"):
 # --- Main ---
 def main():
     st.title("🎧 PDF Voice Reader")
+    st.caption("⚡ Version 2.0 - Dec 19, 2024")
     
     if supabase:
         st.caption("☁️ Cloud storage connected")
