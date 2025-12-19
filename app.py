@@ -277,12 +277,14 @@ def main():
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
                 
                 if text.strip():
+                    st.info(f"📖 Reading Page {page + 1}...")
                     with st.spinner("Generating audio..."):
                         audio, status = make_audio(text, voice)
                         
                         if audio:
                             st.session_state.audio_data = audio
-                            st.success(f"✅ Audio generated!")
+                            st.session_state.reading_page = page + 1  # Store which page
+                            st.success(f"✅ Audio ready for Page {page + 1}!")
                             st.audio(audio, format="audio/mp3")
                             st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_page")
                         else:
@@ -302,17 +304,20 @@ def main():
                 if st.button(f"🎧 Read {start}-{end}", use_container_width=True, key="range_read"):
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
+                        st.info(f"📖 Reading Pages {start} to {end}...")
                         with st.spinner("Generating audio..."):
                             audio, status = make_audio(range_text, voice)
                             if audio:
                                 st.session_state.audio_data = audio
-                                st.success("✅ Audio generated!")
+                                st.session_state.reading_page = f"{start}-{end}"  # Store range
+                                st.success(f"✅ Audio ready for Pages {start}-{end}!")
                                 st.audio(audio, format="audio/mp3")
                                 st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_range")
 
-            # Persistent Audio Player
+            # Persistent Audio Player (shows what's currently loaded)
             if st.session_state.audio_data:
-                st.success("✅ Ready to play!")
+                reading_info = st.session_state.get('reading_page', 'audio')
+                st.success(f"🎧 Now Playing: Page {reading_info}")
                 st.audio(st.session_state.audio_data, format="audio/mp3")
                 st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_persistent")
 
