@@ -74,7 +74,10 @@ import time
 @st.cache_data(show_spinner=False)
 def make_audio(text, lang, tld):
     """Generate audio. Returns (audio_bytes, status_code)."""
+    st.write(f"🔧 DEBUG: make_audio called with {len(text)} chars, lang={lang}, tld={tld}")
+    
     if not text or not text.strip():
+        st.write("🔧 DEBUG: Empty text")
         return None, 400
     
     # Limit text length
@@ -84,19 +87,22 @@ def make_audio(text, lang, tld):
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            st.write(f"🔧 DEBUG: Attempt {attempt + 1}")
             tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
             audio = io.BytesIO()
             tts.write_to_fp(audio)
             audio.seek(0)
-            return audio.getvalue(), 200
+            audio_bytes = audio.getvalue()
+            st.write(f"🔧 DEBUG: Success! Audio size: {len(audio_bytes)} bytes")
+            return audio_bytes, 200
         except Exception as e:
+            st.write(f"🔧 DEBUG: Exception: {e}")
             if "429" in str(e):
                 if attempt < max_retries - 1:
                     wait_time = (attempt + 1) * 2
                     time.sleep(wait_time)
                     continue
                 else:
-                    # Return 429 status so UI can handle cooldown
                     return None, 429
             else:
                 st.error(f"Audio Error: {e}")
