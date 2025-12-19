@@ -288,16 +288,13 @@ def main():
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
                 
                 if text.strip():
-                    st.info(f"📖 Reading Page {page + 1}...")
-                    with st.spinner("Generating audio..."):
+                    with st.spinner(f"📖 Generating audio for Page {page + 1}..."):
                         audio, status = make_audio(text, voice)
                         
                         if audio:
                             st.session_state.audio_data = audio
-                            st.session_state.reading_page = page + 1  # Store which page
-                            st.success(f"✅ Audio ready for Page {page + 1}!")
-                            st.audio(audio, format="audio/mp3")
-                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3", key="dl_page")
+                            st.session_state.reading_page = page + 1
+                            st.rerun()  # Rerun to show persistent player only
                         else:
                             st.error(f"❌ TTS failed")
                 else:
@@ -335,20 +332,19 @@ def main():
                     if audio_data:
                         st.session_state.audio_data = audio_data
                         st.session_state.reading_page = f"{start}-{end}"
-                        progress_bar.progress(1.0)
-                        status_text.success(f"✅ Audio ready for Pages {start}-{end}!")
-                        st.audio(audio_data, format="audio/mp3")
-                        st.download_button("📥 Download MP3", audio_data, f"pages_{start}_{end}.mp3", "audio/mp3", key="dl_range")
+                        progress_bar.empty()
+                        status_text.empty()
+                        st.rerun()  # Rerun to show persistent player only
                     else:
                         status_text.error("❌ No audio generated")
 
-            # Persistent Audio Player
+            # === SINGLE AUDIO PLAYER (no duplicates) ===
             if 'audio_data' in st.session_state and st.session_state.audio_data:
                 st.markdown("---")
                 reading_info = st.session_state.get('reading_page', 'audio')
-                st.success(f"🎧 Audio Loaded: Page {reading_info}")
+                st.success(f"🎧 Now Playing: Page {reading_info}")
                 st.audio(st.session_state.audio_data, format="audio/mp3")
-                st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_persistent")
+                st.download_button("📥 Download MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_audio")
 
             st.markdown("---")
             st.subheader("📝 Text")
