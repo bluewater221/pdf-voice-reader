@@ -1,6 +1,7 @@
 import streamlit as st
 import fitz  # PyMuPDF
-from gtts import gTTS
+import edge_tts
+import asyncio
 import io
 import uuid
 
@@ -43,13 +44,15 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- Voices ---
+# --- Voices (Edge TTS voices) ---
 VOICES = {
-    "👩 Sarah (American)": {"tld": "com", "lang": "en"},
-    "👩 Grace (British)": {"tld": "co.uk", "lang": "en"},
-    "👩 Maya (Indian)": {"tld": "co.in", "lang": "en"},
-    "👩 Lisa (Australian)": {"tld": "com.au", "lang": "en"},
-    "👩 Mei (Chinese)": {"tld": "com", "lang": "zh-CN"},
+    "👩 Jenny (American)": "en-US-JennyNeural",
+    "👩 Aria (American)": "en-US-AriaNeural",
+    "👨 Guy (American)": "en-US-GuyNeural",
+    "👩 Sonia (British)": "en-GB-SoniaNeural",
+    "👩 Neerja (Indian)": "en-IN-NeerjaNeural",
+    "👩 Natasha (Australian)": "en-AU-NatashaNeural",
+    "👩 Xiaoxiao (Chinese)": "zh-CN-XiaoxiaoNeural",
 }
 
 # --- Helper Functions ---
@@ -71,28 +74,30 @@ def get_page_image(file_bytes, page_num):
 
 import time
 
-def make_audio(text, lang, tld):
-    """Generate audio. Returns (audio_bytes, status_code)."""
+async def _generate_audio(text, voice):
+    """Async function to generate audio using edge-tts."""
+    communicate = edge_tts.Communicate(text, voice)
+    audio_data = io.BytesIO()
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data.write(chunk["data"])
+    audio_data.seek(0)
+    return audio_data.getvalue()
+
+def make_audio(text, voice):
+    """Generate audio using Edge TTS. Returns (audio_bytes, status_code)."""
     if not text or not text.strip():
         return None, 400
     
     # Limit text length
     text = text[:5000]
     
-    # Single attempt (no caching, fresh each time)
     try:
-        tts = gTTS(text=text, lang=lang, tld=tld, slow=False)
-        audio = io.BytesIO()
-        tts.write_to_fp(audio)
-        audio.seek(0)
-        return audio.getvalue(), 200
+        audio = asyncio.run(_generate_audio(text, voice))
+        return audio, 200
     except Exception as e:
-        error_str = str(e)
-        if "429" in error_str:
-            return None, 429
-        else:
-            st.error(f"TTS Error: {error_str}")
-            return None, 500
+        st.error(f"TTS Error: {e}")
+        return None, 500
 
 # --- Supabase Functions ---
 def cloud_upload(data, name, bucket="pdfs"):
@@ -267,23 +272,21 @@ def main():
             # Read This Page Button
             if st.button("🔊 Read This Page", type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
-                st.info(f"🔧 DEBUG: Text length = {len(text)} chars")
                 
                 if len(text) > 5000:
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
                 
                 if text.strip():
-                    st.info(f"🔧 DEBUG: Calling make_audio with lang={voice['lang']}, tld={voice['tld']}")
-                    audio, status = make_audio(text, voice["lang"], voice["tld"])
-                    st.info(f"🔧 DEBUG: make_audio returned status={status}, audio_size={len(audio) if audio else 0}")
-                    
-                    if audio:
-                        st.session_state.audio_data = audio
-                        st.success(f"✅ Audio generated! {len(audio)} bytes")
-                        st.audio(audio, format="audio/mp3")
-                        st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
-                    else:
-                        st.error(f"❌ TTS failed with status {status}")
+                    with st.spinner("Generating audio..."):
+                        audio, status = make_audio(text, voice)
+                        
+                        if audio:
+                            st.session_state.audio_data = audio
+                            st.success(f"✅ Audio generated!")
+                            st.audio(audio, format="audio/mp3")
+                            st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
+                        else:
+                            st.error(f"❌ TTS failed")
                 else:
                     st.warning("No text on this page")
 
@@ -300,10 +303,12 @@ def main():
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
                         with st.spinner("Generating audio..."):
-                            audio, status = make_audio(range_text, voice["lang"], voice["tld"])
+                            audio, status = make_audio(range_text, voice)
                             if audio:
                                 st.session_state.audio_data = audio
-                                st.rerun()
+                                st.success("✅ Audio generated!")
+                                st.audio(audio, format="audio/mp3")
+                                st.download_button("📥 Download MP3", audio, "audio.mp3", "audio/mp3")
 
             # Persistent Audio Player
             if st.session_state.audio_data:
