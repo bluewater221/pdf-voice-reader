@@ -138,8 +138,18 @@ def cloud_delete(name, bucket="pdfs"):
 
 # --- Main ---
 def main():
+    st.set_page_config(layout="wide") # Ensure layout is valid even if main calls it late (though app.py top level has it)
     st.title("🎧 PDF Voice Reader")
-    st.caption("⚡ Version 2.0 - Dec 19, 2024")
+    st.caption("⚡ Version 2.1 - Callbacks Enabled")
+    st.caption("⚡ Version 2.1 - Callbacks Enabled")
+    
+    # Debug Mode
+    if st.sidebar.checkbox("🐞 Debug Mode"):
+        st.sidebar.markdown("### State Inspector")
+        st.sidebar.write(f"**Current Page:** {st.session_state.get('page')}")
+        st.sidebar.write(f"**Total Pages:** {st.session_state.get('pages')}")
+        st.sidebar.write(f"**Audio Data:** {'Present' if st.session_state.get('audio_data') else 'None'}")
+        st.sidebar.json(st.session_state)
     
     if supabase:
         st.caption("☁️ Cloud storage connected")
