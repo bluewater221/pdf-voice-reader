@@ -264,15 +264,8 @@ def main():
             
             st.markdown("---")
             
-            # TTS Cooldown Logic
-            if 'tts_limit' not in st.session_state:
-                st.session_state.tts_limit = 0
-            
-            remaining = int(st.session_state.tts_limit - time.time())
-            is_cooldown = remaining > 0
-            
-            btn_text = f"⚠️ Wait {remaining}s" if is_cooldown else "🔊 Read This Page"
-            if st.button(btn_text, disabled=is_cooldown, type="primary", use_container_width=True):
+            # Read This Page Button (no cooldown for now)
+            if st.button("🔊 Read This Page", type="primary", use_container_width=True):
                 text = texts[page] if page < len(texts) else ""
                 if len(text) > 5000:
                     st.warning(f"⚠️ Text is long ({len(text)} chars). Reading first 5000 chars.")
@@ -299,18 +292,13 @@ def main():
             end = r2.number_input("To", 1, pages, pages)
             
             if start <= end:
-                range_btn_text = f"⏳ Ready in {remaining}s" if is_cooldown else f"🎧 Read {start}-{end}"
-                
-                if st.button(range_btn_text, disabled=is_cooldown, use_container_width=True, key="range_read"):
+                if st.button(f"🎧 Read {start}-{end}", use_container_width=True, key="range_read"):
                     range_text = " ".join([texts[i] for i in range(start-1, end) if i < len(texts)])
                     if range_text.strip():
                         with st.spinner("Generating audio..."):
                             audio, status = make_audio(range_text, voice["lang"], voice["tld"])
                             if audio:
                                 st.session_state.audio_data = audio
-                                st.rerun()  # Rerun to show persistent player
-                            elif status == 429:
-                                st.session_state.tts_limit = time.time() + 20
                                 st.rerun()
 
             # Persistent Audio Player
