@@ -264,15 +264,15 @@ def main():
                     st.session_state.page = new_pg
                     st.rerun()
             
-            # Navigation buttons
+            # Navigation buttons with text labels
             nav1, nav2, nav3, nav4 = st.columns(4)
-            if nav1.button("⏪", help="First page", key="nav_first"): 
+            if nav1.button("First", key="nav_first", use_container_width=True): 
                 st.session_state.page = 0; st.rerun()
-            if nav2.button("◀️", help="Previous page", key="nav_prev") and page > 0: 
+            if nav2.button("Prev", key="nav_prev", use_container_width=True) and page > 0: 
                 st.session_state.page -= 1; st.rerun()
-            if nav3.button("▶️", help="Next page", key="nav_next") and page < pages-1: 
+            if nav3.button("Next", key="nav_next", use_container_width=True) and page < pages-1: 
                 st.session_state.page += 1; st.rerun()
-            if nav4.button("⏩", help="Last page", key="nav_last"): 
+            if nav4.button("Last", key="nav_last", use_container_width=True): 
                 st.session_state.page = pages-1; st.rerun()
             
             st.markdown("---")
