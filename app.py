@@ -254,12 +254,7 @@ def main():
     st.title("🎧 PDF Voice Reader")
     st.caption("⚡ Version 3.1 - Mobile Optimized")
     
-    # Debug Mode
-    if st.sidebar.checkbox("🐞 Debug Mode"):
-        st.sidebar.markdown("### State Inspector")
-        st.sidebar.write(f"**Current Page:** {st.session_state.get('page')}")
-        st.sidebar.write(f"**Total Pages:** {st.session_state.get('pages')}")
-        st.sidebar.write(f"**Last Action:** {st.session_state.get('last_action', 'None')}")
+
     
     if supabase:
         st.caption("☁️ Cloud storage connected")
@@ -384,9 +379,18 @@ def main():
         # --- Top Audio Player (Sticky) ---
         if 'audio_data' in st.session_state and st.session_state.audio_data:
             reading_info = st.session_state.get('reading_page', 'audio')
-            ac1, ac2 = st.columns([4, 1])
+            
+            # Columns: Status | Download | Cloud Save
+            ac1, ac2, ac3 = st.columns([3, 1, 1])
             ac1.success(f"🎧 Playing: Page {reading_info}")
             ac2.download_button("📥 MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_audio_top")
+            
+            if supabase and ac3.button("☁️ Save MP3"):
+                safe_fname = re.sub(r'[^\w\-_\.]', '_', st.session_state.fname)
+                mp3_name = f"audio_{safe_fname}_{reading_info}.mp3"
+                if cloud_upload(st.session_state.audio_data, mp3_name):
+                    st.toast(f"Saved: {mp3_name}", icon="☁️")
+
             st.audio(st.session_state.audio_data, format="audio/mp3")
             st.markdown("---")
 
