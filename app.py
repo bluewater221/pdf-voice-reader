@@ -23,8 +23,8 @@ st.set_page_config(
 )
 
 # --- Supabase ---
-SUPABASE_URL = "https://gkqjhfatsjormqthshri.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdrcWpoZmF0c2pvcm1xdGhzaHJpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjYwNDk4MDYsImV4cCI6MjA4MTYyNTgwNn0.z6Rn29XIRTicPxL99hc0i9TB2ur7Ek7EgNTyxQXH5xs"
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 @st.cache_resource
 def get_supabase():
@@ -250,7 +250,6 @@ def set_page_from_input():
 
 # --- Main ---
 def main():
-    st.set_page_config(layout="wide") # Ensure layout is valid even if main calls it late
     st.title("🎧 PDF Voice Reader")
     st.caption("⚡ Version 3.1 - Mobile Optimized")
     
