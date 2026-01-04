@@ -2,3 +2,4 @@ streamlit
 pymupdf
 edge-tts
 supabase
+nest-asyncio

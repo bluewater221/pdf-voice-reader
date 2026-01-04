@@ -3,15 +3,24 @@ import fitz  # PyMuPDF
 import edge_tts
 import asyncio
 import io
-import uuid
 import re
 import time
+import sys
+
+# Fix asyncio issues on Windows
+if sys.platform == "win32":
+    try:
+        import nest_asyncio
+        nest_asyncio.apply()
+    except ImportError:
+        pass
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Supabase import
 try:
     from supabase import create_client
     SUPABASE_OK = True
-except:
+except ImportError:
     SUPABASE_OK = False
 
 # --- Page Config ---
@@ -22,18 +31,29 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- Supabase ---
-SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+# --- Supabase (with graceful fallback) ---
+def get_secret(key, default=""):
+    """Safely get a secret, returning default if not found."""
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+SUPABASE_URL = get_secret("SUPABASE_URL")
+SUPABASE_KEY = get_secret("SUPABASE_KEY")
 
 @st.cache_resource
 def get_supabase():
-    if SUPABASE_OK:
-        try:
-            return create_client(SUPABASE_URL, SUPABASE_KEY)
-        except:
-            return None
-    return None
+    """Initialize Supabase client with error handling."""
+    if not SUPABASE_OK:
+        return None
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        return create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        st.warning(f"Cloud storage unavailable: {e}")
+        return None
 
 supabase = get_supabase()
 
@@ -106,21 +126,29 @@ VOICES = {
 
 # --- Helper Functions ---
 def get_pdf_text(file_bytes, ftype="pdf"):
+    """Extract text and TOC from PDF/EPUB."""
     try:
         doc = fitz.open(stream=file_bytes, filetype=ftype)
-        # Get TOC: list of [lvl, title, page, dest]
-        toc = doc.get_toc() 
-        return len(doc), [page.get_text() for page in doc], toc
+        toc = doc.get_toc()
+        texts = [page.get_text() for page in doc]
+        doc.close()
+        return len(texts), texts, toc
     except Exception as e:
-        st.error(f"Doc Error: {e}")
+        st.error(f"Document Error: {e}")
         return 0, [], []
 
 def get_page_image(file_bytes, page_num, ftype="pdf"):
+    """Render a page as PNG image."""
     try:
         doc = fitz.open(stream=file_bytes, filetype=ftype)
+        if page_num >= len(doc):
+            doc.close()
+            return None
         pix = doc.load_page(page_num).get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-        return pix.tobytes("png")
-    except:
+        img_bytes = pix.tobytes("png")
+        doc.close()
+        return img_bytes
+    except Exception:
         return None
 
 async def _generate_audio(text, voice):
@@ -134,15 +162,25 @@ async def _generate_audio(text, voice):
     return audio_data.getvalue()
 
 def make_audio(text, voice):
-    """Generate audio using Edge TTS. Returns (audio_bytes, status_code)."""
+    """Generate audio using Edge TTS with proper error handling."""
     if not text or not text.strip():
         return None, 400
     
-    # Limit text length
+    # Limit text length to avoid timeout
     text = text[:5000]
     
     try:
-        audio = asyncio.run(_generate_audio(text, voice))
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        audio = loop.run_until_complete(_generate_audio(text, voice))
         return audio, 200
     except Exception as e:
         st.error(f"TTS Error: {e}")
@@ -150,47 +188,44 @@ def make_audio(text, voice):
 
 # --- Smart Text Cleaning ---
 def clean_text(text):
-    """
-    Cleans text by removing:
-    1. Page numbers (e.g., "14", "Page 14", "14 of 30")
-    2. CID artifacts (often invisible or weird chars)
-    3. Excessive whitespace
-    """
+    """Clean text by removing page numbers, headers, footers, and artifacts."""
+    if not text:
+        return ""
+    
     lines = text.split('\n')
     cleaned_lines = []
     
     # Regex for common page number patterns
-    # Matches: "1", " 1 ", "- 1 -", "Page 1", "1 of 20"
     page_num_pattern = re.compile(r'^\s*(?:page\s*)?(\d+)(?:\s*of\s*\d+)?\s*[-]?\s*$', re.IGNORECASE)
     
     for line in lines:
         stripped = line.strip()
-        # Skip empty lines
         if not stripped:
             continue
-            
+        
         # Skip page numbers
         if page_num_pattern.match(stripped):
             continue
-            
-        # Skip likely headers/footers (short uppercase lines might be titles, keep them, but skip purely numeric or weird symbols)
-        if len(stripped) < 4 and not stripped[0].isalnum(): 
-            continue
-            
-        cleaned_lines.append(line)
         
+        # Skip short non-alphanumeric lines (likely artifacts)
+        if len(stripped) < 4 and stripped and not stripped[0].isalnum():
+            continue
+        
+        cleaned_lines.append(line)
+    
     return '\n'.join(cleaned_lines)
 
-# --- Cloud Storage ---
+# --- Cloud Storage (with error handling) ---
 def cloud_upload(file_bytes, filename, bucket="pdfs"):
-    if not supabase: return None
+    """Upload file to Supabase storage."""
+    if not supabase:
+        return None
     try:
-        # Check if exists
         files = supabase.storage.from_(bucket).list()
-        if any(f['name'] == filename for f in files):
-            st.toast(f"Switched to existing: {filename}", icon="📂")
+        if any(f.get('name') == filename for f in (files or [])):
+            st.toast(f"File exists: {filename}", icon="📂")
             return filename
-            
+        
         supabase.storage.from_(bucket).upload(filename, file_bytes)
         return filename
     except Exception as e:
@@ -198,284 +233,320 @@ def cloud_upload(file_bytes, filename, bucket="pdfs"):
         return None
 
 def cloud_list(bucket="pdfs"):
-    if not supabase: return []
+    """List files in Supabase storage."""
+    if not supabase:
+        return []
     try:
-        return supabase.storage.from_(bucket).list() or []
-    except:
+        result = supabase.storage.from_(bucket).list()
+        return result if result else []
+    except Exception:
         return []
 
 def cloud_download(name, bucket="pdfs"):
-    if not supabase: 
-        st.error("Supabase not connected")
+    """Download file from Supabase storage."""
+    if not supabase:
         return None
     try:
-        data = supabase.storage.from_(bucket).download(name)
-        return data
+        return supabase.storage.from_(bucket).download(name)
     except Exception as e:
         st.error(f"Download Error: {e}")
         return None
 
 def cloud_delete(name, bucket="pdfs"):
-    if not supabase: return False
+    """Delete file from Supabase storage."""
+    if not supabase:
+        return False
     try:
         supabase.storage.from_(bucket).remove([name])
         return True
-    except:
+    except Exception:
         return False
 
 # --- Navigation Callbacks ---
 def nav_page(delta):
+    """Navigate to next/previous page."""
     new_p = st.session_state.page + delta
     if 0 <= new_p < st.session_state.pages:
         st.session_state.page = new_p
         st.session_state.audio_data = None
-        st.session_state.last_action = f"Navigated delta {delta}"
-        # Force sync slider
-        if 'nav_slider' in st.session_state: 
-            del st.session_state.nav_slider
-
-def set_page(p):
-    st.session_state.page = p
-    st.session_state.audio_data = None
-    st.session_state.last_action = f"Set page to {p}"
-    # Force sync slider
-    if 'nav_slider' in st.session_state: 
-        del st.session_state.nav_slider
 
 def set_page_from_input():
+    """Set page from number input."""
     if 'nav_goto' in st.session_state:
-        st.session_state.page = st.session_state.nav_goto - 1
-        st.session_state.audio_data = None
-        st.session_state.last_action = f"Jumped to {st.session_state.page + 1}"
+        new_page = st.session_state.nav_goto - 1
+        if 0 <= new_page < st.session_state.pages:
+            st.session_state.page = new_page
+            st.session_state.audio_data = None
 
-# --- Main ---
+# --- Initialize Session State ---
+def init_session_state():
+    """Initialize all session state variables."""
+    defaults = {
+        'pdf': None,
+        'ftype': 'pdf',
+        'page': 0,
+        'pages': 0,
+        'texts': [],
+        'toc': [],
+        'fname': '',
+        'audio_data': None,
+        'reading_page': None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+# --- Main Application ---
 def main():
     st.title("🎧 PDF Voice Reader")
-    st.caption("⚡ Version 3.1 - Mobile Optimized")
+    st.caption("⚡ Version 4.0 - Improved Stability")
     
-
-    
+    # Show connection status
     if supabase:
         st.caption("☁️ Cloud storage connected")
+    else:
+        st.caption("📁 Local mode (cloud unavailable)")
     
-    # Session state
-    if 'pdf' not in st.session_state: st.session_state.pdf = None
-    if 'ftype' not in st.session_state: st.session_state.ftype = "pdf"
-    if 'page' not in st.session_state: st.session_state.page = 0
-    if 'pages' not in st.session_state: st.session_state.pages = 0
-    if 'texts' not in st.session_state: st.session_state.texts = []
-    if 'toc' not in st.session_state: st.session_state.toc = []
-    if 'fname' not in st.session_state: st.session_state.fname = ""
-
-    # Sidebar
+    # Initialize session state
+    init_session_state()
+    
+    # --- Sidebar ---
     with st.sidebar:
-        st.header("🎤 Voice")
-        voice_name = st.selectbox("Select", list(VOICES.keys()))
+        st.header("🎤 Voice Settings")
+        voice_name = st.selectbox("Select Voice", list(VOICES.keys()))
         voice = VOICES[voice_name]
         
-        st.checkbox("✨ Smart Cleaning", value=True, key="smart_clean", help="Removes headers & page numbers")
+        smart_clean = st.checkbox("✨ Smart Cleaning", value=True, 
+                                   help="Removes headers, footers & page numbers")
         
         # Chapter Navigation
-        if st.session_state.get('toc'):
+        if st.session_state.toc:
             st.markdown("---")
             st.header("📌 Chapters")
-            # Create mapping for valid pages
-            chapter_map = {f"{item[1]} (Pg {item[2]})": item[2]-1 for item in st.session_state.toc if item[2] > 0}
+            chapter_map = {
+                f"{item[1][:30]}... (Pg {item[2]})" if len(item[1]) > 30 else f"{item[1]} (Pg {item[2]})": item[2] - 1
+                for item in st.session_state.toc if item[2] > 0
+            }
             if chapter_map:
-                sel_chap = st.selectbox("Jump to", ["Select..."] + list(chapter_map.keys()))
-                if sel_chap != "Select..." and chapter_map[sel_chap] != st.session_state.page:
+                options = ["Select chapter..."] + list(chapter_map.keys())
+                sel_chap = st.selectbox("Jump to Chapter", options)
+                if sel_chap != "Select chapter..." and chapter_map.get(sel_chap, -1) != st.session_state.page:
                     st.session_state.page = chapter_map[sel_chap]
+                    st.session_state.audio_data = None
                     st.rerun()
-
+        
+        # Cloud Library
         st.markdown("---")
         st.header("☁️ Cloud Library")
         
         if supabase:
             files = cloud_list()
-            if files:
-                # Create a list of filenames
-                file_names = [f.get('name') for f in files if f.get('name')]
+            file_names = [f.get('name') for f in files if f.get('name')]
+            
+            if file_names:
+                selected_file = st.selectbox("Select File", file_names)
                 
-                if file_names:
-                    selected_file = st.selectbox("Select File", file_names)
-                    
-                    col_l, col_d = st.columns(2)
-                    
-                    if col_l.button("📂 Load", use_container_width=True):
-                        with st.spinner("Downloading..."):
-                            try:
-                                data = cloud_download(selected_file)
-                                
-                                if data:
-                                    try:
-                                        ftype = selected_file.split('.')[-1].lower() if '.' in selected_file else "pdf"
-                                        st.session_state.pdf = data
-                                        p, t, toc = get_pdf_text(data, ftype)
-                                        st.session_state.ftype = ftype
-                                        if p > 0:
-                                            st.session_state.pages = p
-                                            st.session_state.texts = t
-                                            st.session_state.toc = toc
-                                            st.session_state.page = 0
-                                            st.session_state.fname = selected_file
-                                            st.success("Loaded!")
-                                            time.sleep(0.5)
-                                            st.rerun()
-                                        else:
-                                            st.error("Invalid PDF content")
-                                    except Exception as ex:
-                                        st.error(f"Error parsing PDF: {ex}")
-                                else:
-                                    st.error("Failed to download file")
-                                        
-                            except Exception as e:
-                                st.error(f"Error: {e}")
-                    
-                    if col_d.button("🗑️ Delete", use_container_width=True):
-                        if cloud_delete(selected_file):
-                            st.success("Deleted!")
-                            st.rerun()
-                else:
-                    st.caption("No files found")
+                col_l, col_d = st.columns(2)
+                
+                if col_l.button("📂 Load", use_container_width=True):
+                    with st.spinner("Downloading..."):
+                        data = cloud_download(selected_file)
+                        if data:
+                            ftype = selected_file.split('.')[-1].lower() if '.' in selected_file else "pdf"
+                            if ftype not in ["pdf", "epub"]:
+                                ftype = "pdf"
+                            
+                            p, t, toc = get_pdf_text(data, ftype)
+                            if p > 0:
+                                st.session_state.pdf = data
+                                st.session_state.ftype = ftype
+                                st.session_state.pages = p
+                                st.session_state.texts = t
+                                st.session_state.toc = toc
+                                st.session_state.page = 0
+                                st.session_state.fname = selected_file
+                                st.session_state.audio_data = None
+                                st.success("Loaded!")
+                                time.sleep(0.3)
+                                st.rerun()
+                            else:
+                                st.error("Could not read document")
+                        else:
+                            st.error("Download failed")
+                
+                if col_d.button("🗑️ Delete", use_container_width=True):
+                    if cloud_delete(selected_file):
+                        st.success("Deleted!")
+                        st.rerun()
             else:
-                st.caption("Library is empty")
+                st.caption("No files in library")
         else:
-            st.warning("Cloud not connected")
-
-    # Upload
-    file = st.file_uploader("📄 Upload Document", type=["pdf", "epub"])
+            st.info("Cloud storage not configured")
+    
+    # --- Main Content ---
+    # File Uploader
+    file = st.file_uploader("📄 Upload PDF or EPUB", type=["pdf", "epub"])
     
     if file:
         data = file.read()
-        # Only update if different file to avoid reset on rerun
+        # Only process if new file
         if st.session_state.pdf != data:
             ftype = file.name.split('.')[-1].lower() if '.' in file.name else "pdf"
-            if ftype not in ["pdf", "epub"]: ftype = "pdf"
+            if ftype not in ["pdf", "epub"]:
+                ftype = "pdf"
             
-            st.session_state.pdf = data
             p, t, toc = get_pdf_text(data, ftype)
-            st.session_state.pages = p
-            st.session_state.texts = t
-            st.session_state.toc = toc
-            st.session_state.page = 0
-            st.session_state.fname = file.name
-            st.session_state.ftype = ftype
-
-    # Viewer (Checks Session State, not just Uploader)
-    if st.session_state.pdf:
-        # Initialize Audio State
-        if 'audio_data' not in st.session_state:
-            st.session_state.audio_data = None
-            
+            if p > 0:
+                st.session_state.pdf = data
+                st.session_state.ftype = ftype
+                st.session_state.pages = p
+                st.session_state.texts = t
+                st.session_state.toc = toc
+                st.session_state.page = 0
+                st.session_state.fname = file.name
+                st.session_state.audio_data = None
+            else:
+                st.error("Could not read the uploaded document")
+    
+    # --- Document Viewer ---
+    if st.session_state.pdf and st.session_state.pages > 0:
         pages = st.session_state.pages
         texts = st.session_state.texts
         page = st.session_state.page
-        ftype = st.session_state.get('ftype', 'pdf')
+        ftype = st.session_state.ftype
         
-        if pages == 0:
-            st.error("Cannot read PDF") 
+        # --- Audio Player (if audio exists) ---
+        if st.session_state.audio_data:
+            reading_info = st.session_state.reading_page or "audio"
             
-        # --- Top Audio Player (Sticky) ---
-        if 'audio_data' in st.session_state and st.session_state.audio_data:
-            reading_info = st.session_state.get('reading_page', 'audio')
-            
-            # Columns: Status | Download | Cloud Save
             ac1, ac2, ac3 = st.columns([3, 1, 1])
             ac1.success(f"🎧 Playing: Page {reading_info}")
-            ac2.download_button("📥 MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_audio_top")
+            ac2.download_button("📥 MP3", st.session_state.audio_data, "audio.mp3", "audio/mp3", key="dl_audio")
             
             if supabase and ac3.button("☁️ Save MP3"):
                 safe_fname = re.sub(r'[^\w\-_\.]', '_', st.session_state.fname)
                 mp3_name = f"audio_{safe_fname}_{reading_info}.mp3"
                 if cloud_upload(st.session_state.audio_data, mp3_name):
                     st.toast(f"Saved: {mp3_name}", icon="☁️")
-
+            
             st.audio(st.session_state.audio_data, format="audio/mp3")
             st.markdown("---")
-
-        # --- Top Controls (Mobile Friendly) ---
+        
+        # --- Navigation Controls ---
         c_nav, c_act = st.columns([2, 1])
         
         with c_nav:
-            n1, n2, n3 = st.columns([1, 1.2, 1])
-            n1.button("◀", on_click=nav_page, args=(-1,), disabled=(page<=0), use_container_width=True)
-            n2.number_input("Pg", 1, pages, page+1, key="nav_goto", label_visibility="collapsed", on_change=set_page_from_input)
-            n3.button("▶", on_click=nav_page, args=(1,), disabled=(page>=pages-1), use_container_width=True)
-
+            n1, n2, n3 = st.columns([1, 1.5, 1])
+            n1.button("◀ Prev", on_click=nav_page, args=(-1,), disabled=(page <= 0), use_container_width=True)
+            n2.number_input("Page", 1, pages, page + 1, key="nav_goto", label_visibility="collapsed", on_change=set_page_from_input)
+            n3.button("Next ▶", on_click=nav_page, args=(1,), disabled=(page >= pages - 1), use_container_width=True)
+        
         with c_act:
-             if st.button("🔊 Read Page", type="primary", use_container_width=True):
-                 text = texts[page] if page < len(texts) else ""
-                 if st.session_state.get('smart_clean', False): text = clean_text(text)
-                 
-                 if text.strip():
-                     with st.spinner("Generating..."):
-                         audio, status = make_audio(text, voice)
-                         if audio:
-                             st.session_state.audio_data = audio
-                             st.session_state.reading_page = page + 1
-                             st.rerun()
-                         else:
-                             st.error("TTS Failed")
-                 else:
-                     st.warning("No text")
-
-        # --- Image Display ---
-        st.caption(f"📄 Page {page + 1} of {pages}")
+            if st.button("🔊 Read Page", type="primary", use_container_width=True):
+                text = texts[page] if page < len(texts) else ""
+                if smart_clean:
+                    text = clean_text(text)
+                
+                if text.strip():
+                    with st.spinner("Generating audio..."):
+                        audio, status = make_audio(text, voice)
+                        if audio:
+                            st.session_state.audio_data = audio
+                            st.session_state.reading_page = page + 1
+                            st.rerun()
+                        else:
+                            st.error("Failed to generate audio. Please try again.")
+                else:
+                    st.warning("No readable text on this page")
+        
+        # --- Page Display ---
+        st.caption(f"📄 Page {page + 1} of {pages} • {st.session_state.fname}")
+        
         img = get_page_image(st.session_state.pdf, page, ftype=ftype)
         if img:
             st.image(img, use_container_width=True)
         else:
-            st.warning("Cannot render page")
-
-        # --- Bottom / Advanced Tools ---
-        with st.expander("📚 Advanced Tools (Save, Range Read, Text)"):
+            st.warning("Could not render page image")
+            # Show text fallback
+            if page < len(texts) and texts[page].strip():
+                st.text_area("Page Text", texts[page][:2000], height=300, disabled=True)
+        
+        # --- Advanced Tools ---
+        with st.expander("📚 Advanced Tools"):
+            # Save to Cloud
             c1, c2 = st.columns([3, 1])
-            c1.caption(f"File: {st.session_state.fname}")
+            c1.caption(f"**File:** {st.session_state.fname}")
             if supabase and c2.button("☁️ Save to Cloud"):
-                if cloud_upload(st.session_state.pdf, st.session_state.fname): st.success("Saved!")
-
-            st.markdown("---")
-            st.markdown("**Read Multiple Pages**")
-            r1, r2 = st.columns(2)
-            start = r1.number_input("Start", 1, pages, 1, key="r_start")
-            end = r2.number_input("End", 1, pages, min(pages, 5), key="r_end")
+                if cloud_upload(st.session_state.pdf, st.session_state.fname):
+                    st.success("Saved to cloud!")
             
-            if start <= end and st.button("Start Range Read"):
-                 all_audio = io.BytesIO()
-                 prog = st.progress(0)
-                 stat = st.empty()
-                 total = end - start + 1
-                 
-                 for i, pg in enumerate(range(start - 1, end)):
-                     if pg < len(texts):
-                         stat.text(f"Reading page {pg+1}...")
-                         prog.progress((i + 1) / total)
-                         t_chunk = texts[pg]
-                         if st.session_state.get('smart_clean', False): t_chunk = clean_text(t_chunk)
-                         
-                         try:
-                             audio_chunk, s = make_audio(t_chunk, voice)
-                             if audio_chunk: 
-                                 all_audio.write(audio_chunk)
-                                 time.sleep(0.1)
-                             else:
-                                 st.warning(f"Skipped {pg+1}")
-                         except: pass
-                 
-                 res_audio = all_audio.getvalue()
-                 if len(res_audio) > 100:
-                     st.session_state.audio_data = res_audio
-                     st.session_state.reading_page = f"{start}-{end}"
-                     st.session_state.last_action = f"Generated Range {start}-{end}"
-                     st.rerun()
-                 else:
-                     stat.error("Failed")
-
             st.markdown("---")
-            st.text_area("Raw Text", texts[page][:1500] if page < len(texts) else "", height=150)
+            
+            # Range Read
+            st.markdown("**📖 Read Multiple Pages**")
+            r1, r2 = st.columns(2)
+            start = r1.number_input("Start Page", 1, pages, 1, key="r_start")
+            end = r2.number_input("End Page", 1, pages, min(pages, 5), key="r_end")
+            
+            if st.button("▶️ Generate Range Audio", disabled=(start > end)):
+                if start <= end:
+                    all_audio = io.BytesIO()
+                    prog = st.progress(0)
+                    status_text = st.empty()
+                    total = end - start + 1
+                    success_count = 0
+                    
+                    for i, pg in enumerate(range(start - 1, end)):
+                        if pg < len(texts):
+                            status_text.text(f"Processing page {pg + 1} of {end}...")
+                            prog.progress((i + 1) / total)
+                            
+                            t_chunk = texts[pg]
+                            if smart_clean:
+                                t_chunk = clean_text(t_chunk)
+                            
+                            if t_chunk.strip():
+                                try:
+                                    audio_chunk, s = make_audio(t_chunk, voice)
+                                    if audio_chunk:
+                                        all_audio.write(audio_chunk)
+                                        success_count += 1
+                                except Exception:
+                                    pass
+                            
+                            time.sleep(0.1)  # Rate limiting
+                    
+                    prog.empty()
+                    status_text.empty()
+                    
+                    result = all_audio.getvalue()
+                    if len(result) > 100:
+                        st.session_state.audio_data = result
+                        st.session_state.reading_page = f"{start}-{end}"
+                        st.success(f"Generated audio for {success_count} pages!")
+                        st.rerun()
+                    else:
+                        st.error("Could not generate audio for the selected range")
+            
+            st.markdown("---")
+            
+            # Raw Text View
+            st.markdown("**📝 Raw Text**")
+            current_text = texts[page][:2000] if page < len(texts) else ""
+            st.text_area("Page Content", current_text, height=150, disabled=True)
     
     else:
-        st.info("👆 Upload a PDF to start (or load from cloud)")
+        # Welcome Screen
+        st.info("👆 Upload a PDF or EPUB to get started, or load one from the cloud library in the sidebar.")
+        
+        st.markdown("""
+        ### Features
+        - 📄 **PDF & EPUB Support** - Upload and view documents
+        - 🔊 **Text-to-Speech** - Listen to any page with natural voices
+        - 📚 **Range Reading** - Generate audio for multiple pages
+        - ☁️ **Cloud Storage** - Save and access documents anywhere
+        - 📌 **Chapter Navigation** - Jump to chapters via table of contents
+        """)
 
 if __name__ == "__main__":
     main()
